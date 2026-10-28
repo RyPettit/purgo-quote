@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Purgō Quote</title>
+<meta name="theme-color" content="#0f4c5c">
+<meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Purgō Quote">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="tb-in">
+    <a class="brand" href="#quote">purg<span>ō</span><small>quote</small></a>
+    <nav class="nav" id="nav" hidden>
+      <button type="button" data-view="quote">Quote</button>
+      <button type="button" data-view="quotes">Saved quotes</button>
+      <button type="button" data-view="admin" class="admin-only">Admin</button>
+    </nav>
+    <div class="tb-user" id="tbUser" hidden>
+      <span class="net" id="net"></span>
+      <span class="who" id="who"></span>
+      <button class="btn sm" type="button" id="signOut">Sign out</button>
+    </div>
+  </div>
+</header>
+<div id="updateBar" class="updatebar" hidden>A new version is ready. <button class="btn sm pri" type="button" id="doUpdate">Refresh</button></div>
+
+<!-- LOGIN -->
+<main id="view-login" class="wrap narrow" hidden>
+  <section class="card login">
+    <h1>purg<span>ō</span> quote</h1>
+    <form id="loginForm" autocomplete="on">
+      <label class="f">Email<input id="lgEmail" type="email" autocomplete="username" required></label>
+      <label class="f">Password<input id="lgPass" type="password" autocomplete="current-password" required></label>
+      <button class="btn pri" type="submit" id="lgBtn">Sign in</button>
+      <button class="linkbtn" type="button" id="lgForgot">Forgotten your password?</button>
+    </form>
+    <form id="resetForm" hidden>
+      <p class="hint">Choose a new password for your account.</p>
+      <label class="f">New password<input id="rsPass" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn pri" type="submit">Save password</button>
+    </form>
+    <p class="note b" id="lgErr" hidden></p>
+    <p class="hint" id="lgMsg" hidden></p>
+  </section>
+</main>
+
+
+
+<main id="view-quote" class="wrap" hidden>
+  <div class="viewbar">
+    <div>
+      <h2 class="vtitle">Quote <span class="ref-inline" id="qrefTop"></span></h2>
+      <p class="sub">Base HU4 7BJ · ancillary labour £<span data-r="labour">30</span>/hr per worker</p>
+    </div>
+    <div class="vb-actions">
+      <span class="hint" id="saveMsg" hidden></span>
+      <button class="btn" id="newJob" type="button">New quote</button>
+      <button class="btn" id="saveCopy" type="button" hidden>Save as new</button>
+      <button class="btn pri" id="saveQ" type="button">Save quote</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+
+      <!-- JOB -->
+      <section class="card">
+        <div class="svc-head"><h2>Customer &amp; location</h2>
+          <div class="seg" id="ctype"><button type="button" data-v="res" class="on">Residential</button><button type="button" data-v="com">Commercial</button></div>
+        </div>
+        <div class="svc-body fields">
+          <label class="f wide">Address<input id="addr" autocomplete="off" placeholder="Type a postcode, or a saved customer or address"><div class="sugg" id="addrSugg" hidden></div></label>
+          <label class="f">Postcode<input id="pc" autocomplete="off" placeholder="e.g. HU13 0ET"><div class="sugg" id="pcSugg" hidden></div></label>
+          <label class="f">Customer / site name<input id="cust"></label>
+          <label class="f">Phone<input id="phone" inputmode="tel"></label>
+                    <label class="f">Miles override (one way)<input id="milesOv" type="number" min="0" step="0.5" placeholder="auto"></label>
+          <label class="f wide">Job notes<input id="jobNotes" placeholder="Gate code, parking, dog in garden…"></label>
+        </div>
+        <div class="loc" id="locBox"></div>
+        <p class="hint">Postcodes cover about 35 miles around base; road distance is estimated from straight-line distance.</p>
+      </section>
+
+      <!-- CREW -->
+      <section class="card">
+        <h2>Crew</h2>
+        <div class="svc-body fields">
+          <label class="f">Crew on the job<input id="workers" type="number" min="1" max="6" value="1"></label>
+          <label class="f">Set-up &amp; pack-down<input id="wSetup" type="number" min="1" max="6" placeholder="whole crew"></label>
+          <label class="f">Access extras<input id="wCx" type="number" min="1" max="6" placeholder="whole crew"></label>
+        </div>
+        <p class="hint">Everyone in the crew is paid for travel and all time on site. Each service has its own headcount; leave a box blank to use the whole crew. When the crew is bigger than a task needs, the spare people start the next job in parallel, and any waiting time shows as idle.</p>
+      </section>
+
+      <!-- PRESSURE WASHING -->
+      <section class="card" id="sec-pw">
+        <div class="svc-head"><h2>Pressure washing <span class="tag">£/m²</span></h2><label class="switch"><input type="checkbox" class="svc" id="on-pw" checked></label></div>
+        <div class="svc-body">
+          <div class="fields" style="margin-bottom:12px"><label class="f">Workers<input id="wPw" type="number" min="1" max="6" placeholder="whole crew"></label></div>
+          <div class="rows" id="pwRows"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm" type="button" id="addPw">+ Add area</button></div>
+          <p class="hint">£<span data-r="pwRate"></span>/m² all-in: set-up, wash, slurry removal and pack-down. Minimum £<span data-r="pwMin"></span>. Heavy soiling adds £<span data-r="heavySoil"></span>/m². Sand and chemicals are charged on top.</p>
+        </div>
+      </section>
+
+      <!-- GUTTERS -->
+      <section class="card" id="sec-gt">
+        <div class="svc-head"><h2>Gutters <span class="tag">£/m</span></h2><label class="switch"><input type="checkbox" class="svc" id="on-gt"></label></div>
+        <div class="svc-body">
+          <div class="fields">
+            <label class="f">Workers<input id="wGt" type="number" min="1" max="6" placeholder="whole crew"></label>
+            <label class="f">Gutter length (m)<input id="gtM" type="number" min="0" step="1" value="0"></label>
+            <label class="f">Storeys<select id="gtSt"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4+</option></select></label>
+            <label class="f">Downpipe guards (qty)<input id="gtGuard" type="number" min="0" value="0"></label>
+            <label class="f">Fascia &amp; soffit clean (m)<input id="gtFas" type="number" min="0" value="0"></label>
+            <label class="f">Known repairs £<input id="gtRep" type="number" min="0" step="5" value="0"></label>
+            <label class="f">Repair description<input id="gtRepD" placeholder="e.g. reseal 2 joints"></label>
+          </div>
+          <div class="checks" style="margin-top:12px">
+            <label class="ck"><input type="checkbox" id="gtCons">Working over conservatory / extension <small>+<span data-r="cx_gtCons"></span>h</small></label>
+            <label class="ck"><input type="checkbox" id="gtHeavy">Heavy blockage / plant growth <small>+<span data-r="cx_gtHeavy"></span>h</small></label>
+          </div>
+          <p class="hint">SkyVac Nitro with 12 m pole. Covers camera survey and clear only.</p>
+        </div>
+      </section>
+
+      <!-- WINDOWS -->
+      <section class="card" id="sec-wn">
+        <div class="svc-head"><h2>Windows <span class="tag">pure water</span></h2><label class="switch"><input type="checkbox" class="svc" id="on-wn"></label></div>
+        <div class="svc-body">
+          <div class="fields">
+            <label class="f">Workers<input id="wWn" type="number" min="1" max="6" placeholder="whole crew"></label>
+            <label class="f">Pricing<select id="wnMode"><option value="type">By property type</option><option value="count">Per window</option></select></label>
+            <label class="f">Property size<select id="wnType"><option value="T">Terrace</option><option value="S" selected>Semi-detached</option><option value="D">Detached</option></select></label>
+            <label class="f">Number of windows<input id="wnCount" type="number" min="0" value="0"></label>
+            <label class="f">Storeys<select id="wnSt"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4+</option></select></label>
+            <label class="f">Conservatory roof £<input id="wnCons" type="number" min="0" step="5" value="0"></label>
+          </div>
+          <div class="checks" style="margin-top:12px">
+            <label class="ck"><input type="checkbox" id="wnSills" checked>Sills &amp; doors</label>
+            <label class="ck"><input type="checkbox" id="wnFirst">First / one-off clean (build-up) <small>+<span data-r="firstClean"></span>%</small></label>
+          </div>
+          <p class="hint" id="wnHint"></p>
+        </div>
+      </section>
+
+      <!-- ROOF -->
+      <section class="card" id="sec-rf">
+        <div class="svc-head"><h2>Roof cleaning <span class="tag">£/m²</span></h2><label class="switch"><input type="checkbox" class="svc" id="on-rf"></label></div>
+        <div class="svc-body">
+          <div class="fields">
+            <label class="f">Workers<input id="wRf" type="number" min="1" max="6" placeholder="whole crew"></label>
+            <label class="f">Roof area (m²)<input id="rfA" type="number" min="0" value="70"></label>
+            <label class="f">Method<select id="rfM"><option value="scrape">Scrape &amp; moss removal</option><option value="lpw">Low pressure wash</option><option value="both">Scrape + low pressure wash</option></select></label>
+            <label class="f">Roof covering<select id="rfT"><option value="concrete">Concrete tile</option><option value="clay">Clay tile</option><option value="slate">Slate</option><option value="flat">Flat / felt / EPDM</option><option value="other">Other</option></select></label>
+            <label class="f">Pitch<select id="rfP"><option value="low">Low</option><option value="std" selected>Standard</option><option value="steep">Steep</option></select></label>
+            <label class="f">Moss / growth<select id="rfMoss"><option value="light">Light</option><option value="moderate" selected>Moderate</option><option value="heavy">Heavy</option></select></label>
+            <label class="f">Storeys to eaves<select id="rfSt"><option value="1">1 (bungalow)</option><option value="2" selected>2</option><option value="3">3</option></select></label>
+            <label class="f">Scaffold tower?<select id="rfTw"><option value="auto">Auto (needed over 1 storey)</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+            <label class="f">Tower positions<input id="rfPos" type="number" min="1" value="2"></label>
+            <label class="f">Tower crew<input id="wTower" type="number" min="1" max="6" placeholder="2"></label>
+            <label class="f">Chemical treatment<select id="rfChem" class="chemSel"></select></label>
+          </div>
+          <p class="hint">Anything over one storey uses the scaffold tower: erect/dismantle labour plus £<span data-r="towerDay"></span> per day.</p>
+          <div id="rfWarn"></div>
+        </div>
+      </section>
+
+      <!-- CONDITIONS -->
+      <section class="card">
+        <h2>Access &amp; site conditions</h2>
+        <p class="hint">Ancillary work, billed at £<span data-r="labour"></span>/hr for each worker. Adjust the hours in Rates.</p>
+        <div class="checks" style="margin-top:10px" id="cxList"></div>
+        <div class="fields" style="margin-top:12px">
+          <label class="f">Other ancillary time (hours)<input id="cxOther" type="number" min="0" step="0.25" value="0"></label>
+          <label class="f wide">Reason<input id="cxOtherD" placeholder="e.g. hand clean around planters"></label>
+        </div>
+        <div id="comBox" hidden>
+          <h3>Commercial</h3>
+          <div class="checks">
+            <label class="ck"><input type="checkbox" id="coRams" checked>RAMS / method statement <small>£<span data-r="rams"></span></small></label>
+            <label class="ck"><input type="checkbox" id="coOoh">Out of hours working <small>+<span data-r="ooh"></span>%</small></label>
+            <label class="ck"><input type="checkbox" id="coInd">Site induction <small>+<span data-r="cx_ind"></span>h</small></label>
+            <label class="ck"><input type="checkbox" id="coBar">Barriers / pedestrian management <small>+<span data-r="cx_bar"></span>h</small></label>
+          </div>
+          <div class="fields" style="margin-top:12px">
+            <label class="f">Permits / traffic mgmt £<input id="coPerm" type="number" min="0" step="5" value="0"></label>
+            <label class="f">Visits per year<input id="coFreq" type="number" min="1" value="1"></label>
+          </div>
+        </div>
+      </section>
+
+      <!-- PRICING & COSTS -->
+      <section class="card">
+        <h2>Pricing &amp; costs</h2>
+        <div class="fields svc-body">
+          <label class="f">Other job costs £<input id="otherCost" type="number" min="0" step="1" value="0"></label>
+          <label class="f">Price adjustment £<input id="adj" type="number" step="1" value="0"></label>
+          <label class="f" style="justify-content:flex-end"><span class="switch"><input type="checkbox" id="vatOn"> Add VAT</span></label>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- TICKET -->
+    <aside class="ticket tk" aria-live="polite">
+      <div class="tk-head">
+        <div class="ref" id="qref"></div>
+        <div class="tk-total" id="tTotal">£0</div>
+        <div class="ref" id="tSub"></div>
+      </div>
+      <div class="tk-body">
+        <div id="tWarn"></div>
+        <table class="lines"><tbody id="tLines"></tbody></table>
+
+        <div class="admin-only">
+          <h3>Costs &amp; profit</h3>
+          <div class="profit" id="pBox"><span class="lab">Profit</span><span class="lab" style="text-align:right">Margin</span><span class="big" id="pAmt">£0</span><span class="pct" id="pPct">0%</span></div>
+          <table class="lines" style="margin-top:8px"><tbody id="cLines"></tbody></table>
+        </div>
+        <div class="stats">
+          <div class="stat"><span>On site</span><b id="sHrs">0h</b></div>
+          <div class="stat"><span>Travel (return)</span><b id="sTrv">0 min</b></div>
+          <div class="stat admin-only"><span>Profit / job hour</span><b id="sPph">£0</b></div>
+          <div class="stat"><span>Days</span><b id="sDays">0</b></div>
+        </div>
+        <div id="planBox"></div>
+        <div>
+          <h3>Customer quote</h3>
+          <textarea id="qtext" readonly></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn pri" type="button" id="copyQ">Copy quote text</button><span id="copied" class="hint" hidden>Copied</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- SAVED QUOTES -->
+<main id="view-quotes" class="wrap" hidden>
+  <div class="viewbar"><div><h2 class="vtitle">Saved quotes</h2><p class="sub" id="qSub"></p></div>
+    <div class="vb-actions"><button class="btn" type="button" id="qRefresh">Refresh</button></div></div>
+  <section class="card">
+    <div class="fields">
+      <label class="f wide">Search<input id="qSearch" type="search" placeholder="Customer, address, postcode or quote ref"></label>
+      <label class="f">Status<select id="qStatus"><option value="">All</option><option value="draft">Draft</option><option value="sent">Sent</option><option value="accepted">Accepted</option><option value="declined">Declined</option></select></label>
+      <label class="f">Quoted by<select id="qBy"><option value="">Anyone</option></select></label>
+    </div>
+    <div class="qlist" id="qList"></div>
+  </section>
+</main>
+
+<!-- ADMIN -->
+<main id="view-admin" class="wrap" hidden>
+  <div class="viewbar"><div><h2 class="vtitle">Admin</h2><p class="sub">Only you can see and change this page.</p></div>
+    <div class="vb-actions"><span class="hint" id="rateMsg" hidden></span><button class="btn pri" type="button" id="saveRates" disabled>Save price list</button></div></div>
+  <section class="card">
+    <h2>Price list</h2>
+    <p class="hint">Staff quote from these prices but cannot see or change them. Costs, labour pay, markups and fuel are hidden from staff; they only receive selling prices. Changes apply to every new quote once you press Save price list.</p>
+    <h3>Fuel</h3>
+    <div class="rgrid">
+      <label class="f">Diesel £/litre<input id="diesel" type="number" step="0.001" min="0" value="1.992"></label>
+      <label class="f">Petrol £/litre (rig)<input id="petrol" type="number" step="0.001" min="0" value="1.741"></label>
+    </div>
+    <p class="hint" id="fuelSrc"></p>
+    <div id="ratesBox"></div>
+    <h3>Chemicals</h3>
+    <p class="hint">Cost per litre of concentrate and the m² one litre covers at working dilution. Application labour is charged at £<span data-r="chemLabour"></span>/m² on top of the product.</p>
+    <div class="chemtbl"><table><thead><tr><th>Name</th><th>£ / litre</th><th>m² per litre</th><th>Markup %</th><th></th></tr></thead><tbody id="chemBody"></tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn sm" type="button" id="addChem">+ Add chemical</button>
+      <button class="btn sm" type="button" id="resetRates">Reset to starting prices</button>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Staff</h2>
+    <p class="hint">To add someone: in Supabase open <b>Authentication → Users → Add user → Create new user</b>, enter their email and a temporary password, and tick <b>Auto Confirm User</b>. They appear here as staff. Switch someone off when they leave; their quotes stay.</p>
+    <div class="qlist" id="staffList"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="config.js"></script>
+<script src="vendor/supabase-2.117.3.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
