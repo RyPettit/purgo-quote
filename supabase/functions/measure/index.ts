@@ -9,7 +9,8 @@
 // Optional:
 //   PURGO_MEASURE_MODEL      defaults to claude-sonnet-5-5
 //
-// Keep "Verify JWT" ON for this function: only signed-in staff can call it.
+// Turn "Verify JWT" OFF for this function. It checks the caller itself: the request must
+// carry a signed-in Purgō user whose staff account is switched on.
 
 const SIZE = 640;   // Static Maps logical size (max 640)
 const SCALE = 2;    // returns a 1280 x 1280 image
@@ -17,7 +18,7 @@ const PX = SIZE * SCALE;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -116,10 +117,28 @@ export function toShapes(input: any, lat: number, lng: number, zoom: number) {
   return out;
 }
 
+// Only active Purgō staff may use this (it spends money on Google and the AI).
+async function checkUser(req: Request): Promise<string | null> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const auth = req.headers.get("authorization") || "";
+  const apikey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+  if (!url || !auth.toLowerCase().startsWith("bearer ")) return "Please sign in again.";
+  const u = await fetch(`${url}/auth/v1/user`, { headers: { Authorization: auth, apikey } });
+  if (!u.ok) return "Please sign in again.";
+  const user = await u.json();
+  // read the caller's own profile with their own token; the database rules do the rest
+  const p = await fetch(`${url}/rest/v1/profiles?id=eq.${user.id}&select=active`, { headers: { Authorization: auth, apikey } });
+  const rows = p.ok ? await p.json() : [];
+  if (!rows?.[0]?.active) return "Your account is not active.";
+  return null;
+}
+
 if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
   try {
+    const denied = await checkUser(req);
+    if (denied) return reply({ error: denied }, 401);
     const { lat, lng, zoom, kind } = await req.json();
     if (![lat, lng, zoom].every((v) => typeof v === "number" && isFinite(v))) return reply({ error: "Missing map position." }, 400);
     if (!["patio", "roof", "gutters"].includes(kind)) return reply({ error: "Unknown measurement type." }, 400);
