@@ -150,10 +150,9 @@ function renderRates(){
   if(ROLE!=='admin'){ document.querySelectorAll('[data-r]').forEach(el=> el.textContent = R[el.dataset.r] ?? ''); return; }
   const box = $('ratesBox'); box.innerHTML = '';
   RATE_GROUPS.forEach(([g, items])=>{
-    const h = document.createElement('h3'); h.textContent = g; box.appendChild(h);
-    const d = document.createElement('div'); d.className = 'rgrid';
-    items.forEach(([k,l])=>{ d.insertAdjacentHTML('beforeend', `<label class="f">${l}<input type="number" step="any" id="r_${k}" data-rk="${k}" value="${R[k]}"></label>`); });
-    box.appendChild(d);
+    const sec = document.createElement('section'); sec.className = 'card';
+    sec.innerHTML = `<h2>${esc(g)}</h2><div class="svc-body"><div class="rgrid">${items.map(([k,l])=>`<label class="f">${l}<input type="number" step="any" id="r_${k}" data-rk="${k}" value="${R[k]}"></label>`).join('')}</div></div>`;
+    box.appendChild(sec);
   });
   renderChems();
   document.querySelectorAll('[data-r]').forEach(el=> el.textContent = R[el.dataset.r]);
@@ -843,14 +842,7 @@ document.addEventListener('change', async e=>{
 
 /* ---------- service worker (offline + updates) ---------- */
 if('serviceWorker' in navigator && location.protocol!=='file:'){
-  navigator.serviceWorker.register('sw.js').then(reg=>{
-    const ask = w => { $('updateBar').hidden = false; $('doUpdate').onclick = ()=> w.postMessage('skipWaiting'); };
-    if(reg.waiting && navigator.serviceWorker.controller) ask(reg.waiting);
-    reg.addEventListener('updatefound', ()=>{ const w = reg.installing; w && w.addEventListener('statechange', ()=>{ if(w.state==='installed' && navigator.serviceWorker.controller) ask(w); }); });
-    setInterval(()=>reg.update().catch(()=>{}), 60*60*1000);
-  }).catch(()=>{});
-  let reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(reloaded) return; reloaded = true; location.reload(); });
+  navigator.serviceWorker.register('sw.js').then(reg=>{ setInterval(()=>reg.update().catch(()=>{}), 60*60*1000); }).catch(()=>{});
 }
 
 /* ---------- start ---------- */

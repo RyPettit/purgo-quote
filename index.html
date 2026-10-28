@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="purgo.css?v=3d1c240933">
 </head>
 <body>
 <header class="topbar">
@@ -261,36 +261,42 @@
 
 <!-- ADMIN -->
 <main id="view-admin" class="wrap" hidden>
-  <div class="viewbar"><div><h2 class="vtitle">Admin</h2><p class="sub">Only you can see and change this page.</p></div>
+  <div class="viewbar"><div><h2 class="vtitle">Admin</h2><p class="sub">Only you can see and change this page. Staff quote from these prices but never see costs, labour pay, markups or fuel. Press Save price list to apply changes.</p></div>
     <div class="vb-actions"><span class="hint" id="rateMsg" hidden></span><button class="btn pri" type="button" id="saveRates" disabled>Save price list</button></div></div>
-  <section class="card">
-    <h2>Price list</h2>
-    <p class="hint">Staff quote from these prices but cannot see or change them. Costs, labour pay, markups and fuel are hidden from staff; they only receive selling prices. Changes apply to every new quote once you press Save price list.</p>
-    <h3>Fuel</h3>
-    <div class="rgrid">
-      <label class="f">Diesel £/litre<input id="diesel" type="number" step="0.001" min="0" value="1.992"></label>
-      <label class="f">Petrol £/litre (rig)<input id="petrol" type="number" step="0.001" min="0" value="1.741"></label>
-    </div>
-    <p class="hint" id="fuelSrc"></p>
-    <div id="ratesBox"></div>
-    <h3>Chemicals</h3>
-    <p class="hint">Cost per litre of concentrate and the m² one litre covers at working dilution. Application labour is charged at £<span data-r="chemLabour"></span>/m² on top of the product.</p>
-    <div class="chemtbl"><table><thead><tr><th>Name</th><th>£ / litre</th><th>m² per litre</th><th>Markup %</th><th></th></tr></thead><tbody id="chemBody"></tbody></table></div>
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-      <button class="btn sm" type="button" id="addChem">+ Add chemical</button>
-      <button class="btn sm" type="button" id="resetRates">Reset to starting prices</button>
-    </div>
-  </section>
+  <div class="admin-grid">
+    <section class="card">
+      <h2>Fuel</h2>
+      <div class="svc-body">
+        <div class="rgrid">
+          <label class="f">Diesel £/litre<input id="diesel" type="number" step="0.001" min="0" value="1.992"></label>
+          <label class="f">Petrol £/litre (rig)<input id="petrol" type="number" step="0.001" min="0" value="1.741"></label>
+        </div>
+        <p class="hint" id="fuelSrc"></p>
+      </div>
+    </section>
+    <div id="ratesBox" class="admin-grid-inner"></div>
+    <section class="card">
+      <h2>Chemicals</h2>
+      <div class="svc-body">
+        <p class="hint">Cost per litre of concentrate and the m² one litre covers at working dilution. Application labour is charged at £<span data-r="chemLabour"></span>/m² on top of the product.</p>
+        <div class="chemtbl"><table><thead><tr><th>Name</th><th>£ / litre</th><th>m² per litre</th><th>Markup %</th><th></th></tr></thead><tbody id="chemBody"></tbody></table></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn sm" type="button" id="addChem">+ Add chemical</button>
+          <button class="btn sm" type="button" id="resetRates">Reset to starting prices</button>
+        </div>
+      </div>
+    </section>
   <section class="card">
     <h2>Staff</h2>
     <p class="hint">To add someone: in Supabase open <b>Authentication → Users → Add user → Create new user</b>, enter their email and a temporary password, and tick <b>Auto Confirm User</b>. They appear here as staff. Switch someone off when they leave; their quotes stay.</p>
     <div class="qlist" id="staffList"></div>
   </section>
+  </div>
 </main>
 
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="app.js"></script>
+<script src="purgo.js?v=e49ab2d436"></script>
 </body>
 </html>

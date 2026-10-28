@@ -182,3 +182,11 @@ input,select,textarea{border-radius:8px}
   .net{display:none}
 }
 label.ck input{width:18px;height:18px;flex:0 0 auto;margin-top:2px}
+
+/* admin: one card per section, like the quote page */
+.admin-grid,.admin-grid-inner{display:flex;flex-direction:column;gap:16px}
+.admin-grid-inner:empty{display:none}
+#view-admin .card h2{margin-bottom:2px}
+#view-admin .svc-body{margin-top:12px}
+#view-admin .viewbar{position:sticky;top:calc(env(safe-area-inset-top,0px) + 52px);z-index:20;background:var(--bg);padding-block:12px;margin-top:-12px;margin-bottom:4px}
+@media (max-width:700px){#view-admin .viewbar{top:calc(env(safe-area-inset-top,0px) + 84px)}}

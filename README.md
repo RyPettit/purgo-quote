@@ -13,7 +13,7 @@ change prices.
 
 | File | What it is |
 |---|---|
-| `index.html`, `styles.css`, `app.js` | The app |
+| `index.html`, `purgo.css`, `purgo.js` | The app |
 | `config.js` | Supabase project URL and public (anon/publishable) key |
 | `supabase/schema.sql` | Tables, access rules and starting prices. Safe to re-run. |
 | `supabase/make-admin.sql` | Makes your account the admin |
@@ -57,5 +57,6 @@ there when they leave; their quotes stay.
 ## Making changes
 
 Changes are made in this repository and Cloudflare redeploys within a minute or
-two. When app files change, bump `VERSION` in `sw.js` so installed phones show
-"A new version is ready".
+two. Before each commit run `python3 tools/stamp.py`: it stamps file hashes into
+`index.html` and `sw.js` so every device loads matching files. Edit
+`tools/sw.template.js`, not `sw.js`.
