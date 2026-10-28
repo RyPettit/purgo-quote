@@ -4,21 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Purgō Quote</title>
-<meta name="theme-color" content="#0f4c5c">
+<meta name="theme-color" content="#132f47">
 <meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header class="topbar">
   <div class="tb-in">
-    <a class="brand" href="#quote">purg<span>ō</span><small>quote</small></a>
+    <a class="brand" href="#quote" aria-label="Purgō Quote"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"><small>Quote</small></a>
     <nav class="nav" id="nav" hidden>
       <button type="button" data-view="quote">Quote</button>
       <button type="button" data-view="quotes">Saved quotes</button>
@@ -36,7 +36,9 @@
 <!-- LOGIN -->
 <main id="view-login" class="wrap narrow" hidden>
   <section class="card login">
-    <h1>purg<span>ō</span> quote</h1>
+    <img class="logo light" src="brand/logo-navy.png" alt="purgō">
+    <img class="logo dark" src="brand/logo-light.png" alt="purgō">
+    <p class="tagline">Quote builder</p>
     <form id="loginForm" autocomplete="on">
       <label class="f">Email<input id="lgEmail" type="email" autocomplete="username" required></label>
       <label class="f">Password<input id="lgPass" type="password" autocomplete="current-password" required></label>
