@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=e6f786fe66">
+<link rel="stylesheet" href="purgo.css?v=68c7dfc347">
 </head>
 <body>
 <header class="topbar">
@@ -316,22 +316,25 @@
         <div id="pAiNote"></div>
         <div class="fields">
           <label class="f wide">Reference (yellow box)<select id="pRefType">
-            <option value="200x100">Block paver 200 × 100 mm</option>
-            <option value="600x600">Slab 600 × 600 mm</option>
-            <option value="900x600">Slab 900 × 600 mm</option>
-            <option value="450x450">Slab or drain cover 450 × 450 mm</option>
-            <option value="600x300">Slab 600 × 300 mm</option>
+            <option value="200x100">Block paving 200 × 100 mm</option>
+            <option value="600x600">Slabs 600 × 600 mm</option>
+            <option value="900x600">Slabs 900 × 600 mm</option>
+            <option value="450x450">Slabs or drain cover 450 × 450 mm</option>
+            <option value="600x300">Slabs 600 × 300 mm</option>
             <option value="custom">Custom size</option>
           </select></label>
-          <label class="f">Side 1→2 (mm)<input id="pRefL" type="number" min="10" value="200"></label>
-          <label class="f">Side 2→3 (mm)<input id="pRefW" type="number" min="10" value="100"></label>
+          <label class="f">Side 1→2: how many<input id="pN1" type="number" min="1" step="1" value="1"></label>
+          <label class="f">each (mm)<input id="pU1" type="number" min="10" value="200"></label>
+          <label class="f">Side 2→3: how many<input id="pN2" type="number" min="1" step="1" value="1"></label>
+          <label class="f">each (mm)<input id="pU2" type="number" min="10" value="100"></label>
         </div>
+        <p class="hint" id="pRefSize" style="margin:6px 0 0"></p>
         <div style="margin-top:8px"><button class="btn sm" type="button" id="pSwap">Swap sides</button></div>
         <div class="p-result" id="pResult"></div>
         <label class="f" style="margin-top:12px">Name<input id="pLabel" value="Driveway"></label>
         <div style="margin-top:12px"><button class="btn pri" type="button" id="pUse" disabled>Add to pressure washing</button></div>
       </div>
-      <p class="hint">The yellow box is something of known size lying flat on the drive. The bigger it is, the more accurate the answer: a run of several whole blocks beats one block. Drag its numbered corners exactly onto the joints. Blue is the area being measured.</p>
+      <p class="hint">The yellow box is something of known size lying flat on the drive. The bigger it is, the more accurate the answer: stretch it over as many whole blocks or slabs as you can count, then enter how many along each side. Drag its numbered corners exactly onto the joints. Blue is the area being measured.</p>
     </section>
   </div>
 </main>
@@ -375,6 +378,6 @@
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
 <script src="purgo.js?v=9fe509f694"></script>
-<script src="measure.js?v=fdc0a416dc"></script>
+<script src="measure.js?v=48b5177f1c"></script>
 </body>
 </html>

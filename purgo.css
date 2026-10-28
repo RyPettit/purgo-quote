@@ -237,3 +237,7 @@ html:not(.is-dev) .dev-only{display:none!important}
 .p-result{margin-top:14px;background:var(--soft);border-radius:10px;padding:12px 14px}
 .p-result .big{font-size:1.8rem;font-weight:800;letter-spacing:-.02em;display:block}
 .p-result small{color:var(--muted)}
+.p-check{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.p-check.bad b{color:#b4541a}
+.p-usecount{display:flex !important;flex-direction:row !important;gap:8px;align-items:center;font-weight:700;margin-top:8px;color:var(--ink)}
+.p-usecount input{width:18px;height:18px;margin:0;flex:none}

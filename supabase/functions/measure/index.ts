@@ -123,13 +123,16 @@ function photoPrompt(w: number, h: number, hint: string) {
 The photo is ${w} x ${h} pixels. Pixel (0,0) is the top-left corner. All coordinates you give must be in these pixels.
 ${hint ? `The user says: "${hint.slice(0, 200)}"\n` : ""}
 1. OUTLINE: outline the main driveway / patio / paved area in the photo as one closed polygon, following where the paving physically ends (walls, kerbs, edging, lawn and bed edges, house wall). Include the surface under parked cars. Exclude the public pavement, road, lawns, beds and anything clearly belonging to a neighbour. If part of the drive runs out of shot, follow the photo edge and say so in notes.
-2. REFERENCE: find a rectangle on the ground whose real size you know, to give the photo its scale. Prefer the LARGEST rectangle you can count exactly, near the middle or front of the paved area:
-   - block paving: standard blocks are 200 x 100 mm. Pick a rectangle made of whole blocks you can count (for example 4 blocks along the 200 mm side by 4 blocks along the 100 mm side in stretcher bond = 800 x 400 mm). Avoid herringbone areas if a straight course is visible; otherwise use one clear whole block.
-   - slabs: common sizes are 600 x 600, 600 x 900, 450 x 450 and 600 x 300 mm. Use one or several whole slabs.
-   - other: a manhole or drain cover (usually 450 x 450 or 600 x 450 mm).
-   Give its 4 corners IN ORDER around the rectangle (corner 1 to 2 is the length, 2 to 3 the width), and its real length and width in mm. Put the corners exactly on the joints.
+2. REFERENCE (the yellow box): mark a rectangle on the ground whose real size you can get by COUNTING blocks or slabs. It sets the scale for the whole photo, so a small box gives big errors: make it as LARGE as you can count reliably, ideally spanning a third or more of the paved area, with its far side reaching well into the area. Never use a single block unless nothing bigger can be counted.
+   - Block paving units are 200 x 100 mm. Count along straight lines of joints:
+     * stretcher bond / basketweave: count whole blocks along each side.
+     * herringbone: the pattern has no long straight joints, so use the straight EDGING course along the drive's border, where blocks are laid in a row. In a soldier course (blocks across the edge) each block shows its 100 mm side along the edge; in a stretcher course (end to end) 200 mm. Put two corners at the ends of a long counted run of edging and the other two the same count of edging blocks along the opposite or adjoining edge, or the depth of a counted run of edging.
+   - Slabs: count whole slabs (common sizes 600 x 600, 900 x 600, 450 x 450, 600 x 300 mm), including the joints.
+   - Otherwise a manhole or drain cover (usually 450 x 450 or 600 x 450 mm).
+   Give the 4 corners IN ORDER around the rectangle, exactly on joints. Report count_12 = how many units along side 1->2 and unit_12_mm = the size of each of those units along that side; likewise count_23 and unit_23_mm for side 2->3; unit_mm = the [length, width] of one block or slab. length_mm = count_12 x unit_12_mm and width_mm = count_23 x unit_23_mm. In "what" say in plain words what you counted, e.g. "14 soldier blocks along the left edge by 8 along the back".
    If no reliable reference is visible, return no reference and say so in notes.
-3. Read the surface type, soiling, moss and weeds as best you can, using "unknown" when you cannot tell.
+3. COUNT CHECK: separately, estimate the size of the outlined area by counting the blocks, edging blocks or slabs along its edges (how many along the length and across the width, allowing for odd shapes and narrowing). Return count_check with length_m, width_m, area_m2 and "how" (one short sentence, e.g. "about 45 edging blocks (4.5 m) along the left side, about 38 (3.8 m) across the back; tapers at the front"). Do this even if you found a reference; it is used to catch mistakes in the yellow box.
+4. Read the surface type, soiling, moss and weeds as best you can, using "unknown" when you cannot tell.
 Return your answer only by calling the report_photo tool.`;
 }
 
@@ -145,10 +148,19 @@ const PHOTO_TOOL = {
         type: "object",
         properties: {
           corners: { type: "array", items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 }, minItems: 4, maxItems: 4 },
+          count_12: { type: "number" },
+          unit_12_mm: { type: "number" },
+          count_23: { type: "number" },
+          unit_23_mm: { type: "number" },
+          unit_mm: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 },
           length_mm: { type: "number" },
           width_mm: { type: "number" },
           what: { type: "string" },
         },
+      },
+      count_check: {
+        type: "object",
+        properties: { length_m: { type: "number" }, width_m: { type: "number" }, area_m2: { type: "number" }, how: { type: "string" } },
       },
       surface: { type: "string", enum: ["block", "concrete", "tarmac", "stone", "imprint", "porcelain", "deck", "gravel", "mixed", "unknown"] },
       soiling: { type: "string", enum: ["light", "normal", "heavy", "unknown"] },
@@ -167,7 +179,7 @@ async function askClaude(akey: string, tool: any, content: any[]) {
     headers: { "x-api-key": akey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("PURGO_MEASURE_MODEL") || "claude-sonnet-5-5",
-      max_tokens: 2000, tools: [tool], tool_choice: { type: "auto" },
+      max_tokens: 3000, tools: [tool], tool_choice: { type: "auto" },
       messages: [{ role: "user", content }],
     }),
   });
@@ -235,11 +247,19 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
       if (!r) return reply({ error: "The AI did not return an outline." }, 502);
       const clip = (p: any) => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]) ? [Math.min(w, Math.max(0, p[0])), Math.min(h, Math.max(0, p[1]))] : null;
       const outline = (r.outline ?? []).map(clip).filter(Boolean);
-      const ref = r.reference && Array.isArray(r.reference.corners) && r.reference.corners.length === 4 && r.reference.length_mm > 0 && r.reference.width_mm > 0
-        ? { corners: r.reference.corners.map(clip), length_mm: r.reference.length_mm, width_mm: r.reference.width_mm, what: String(r.reference.what || "") } : null;
+      const rf = r.reference || {};
+      const num = (v: any) => (typeof v === "number" && isFinite(v) && v > 0 ? v : 0);
+      const L = num(rf.count_12) && num(rf.unit_12_mm) ? rf.count_12 * rf.unit_12_mm : num(rf.length_mm);
+      const Wd = num(rf.count_23) && num(rf.unit_23_mm) ? rf.count_23 * rf.unit_23_mm : num(rf.width_mm);
+      const ref = Array.isArray(rf.corners) && rf.corners.length === 4 && L > 0 && Wd > 0
+        ? { corners: rf.corners.map(clip), length_mm: L, width_mm: Wd, count_12: num(rf.count_12) || null, unit_12_mm: num(rf.unit_12_mm) || null,
+            count_23: num(rf.count_23) || null, unit_23_mm: num(rf.unit_23_mm) || null,
+            unit_mm: Array.isArray(rf.unit_mm) && rf.unit_mm.length === 2 && rf.unit_mm.every(num) ? rf.unit_mm : null, what: String(rf.what || "") } : null;
+      const cc = r.count_check || {};
+      const count_check = num(cc.area_m2) ? { area_m2: cc.area_m2, length_m: num(cc.length_m) || null, width_m: num(cc.width_m) || null, how: String(cc.how || "").slice(0, 300) } : null;
       return reply({
         label: String(r.label || "Driveway").slice(0, 60), outline: outline.length >= 3 ? outline : [],
-        reference: ref && ref.corners.every(Boolean) ? ref : null,
+        reference: ref && ref.corners.every(Boolean) ? ref : null, count_check,
         suggestions: { surface: r.surface, soiling: r.soiling, moss: r.moss, weeds: r.weeds },
         confidence: r.confidence, notes: r.notes,
       });

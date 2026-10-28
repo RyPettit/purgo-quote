@@ -330,7 +330,7 @@ const PHOTO = (()=>{
   const el = id => document.getElementById(id);
   const MAXPX = 1568;
   let W = 0, H = 0, b64 = null;
-  let outline = [], ref = [], mode = null, sugg = null, drag = null;
+  let outline = [], ref = [], mode = null, sugg = null, drag = null, check = null, useCount = false;
 
   // ---- maths ----
   function solve(A, b){ // Gaussian elimination, n x n
@@ -355,8 +355,8 @@ const PHOTO = (()=>{
   function measure(){
     if(outline.length < 3) return {err:'Outline the drive or patio first.'};
     if(ref.length < 4) return {err:'Mark the four corners of the reference (yellow box).'};
-    const L = +el('pRefL').value/1000, Wd = +el('pRefW').value/1000;
-    if(!(L>0 && Wd>0)) return {err:'Enter the reference size in mm.'};
+    const {L:Lmm, W:Wmm} = refSize(), L = Lmm/1000, Wd = Wmm/1000;
+    if(!(L>0 && Wd>0)) return {err:'Enter how many blocks or slabs the yellow box covers along each side, and their size.'};
     const h = homography(ref, [[0,0],[L,0],[L,Wd],[0,Wd]]);
     if(!h) return {err:'The reference corners are in a straight line. Move them to the four corners of the box.'};
     const s0 = Math.sign(apply(h, ref[0]).d);
@@ -390,12 +390,43 @@ const PHOTO = (()=>{
     svg.innerHTML = s;
     result();
   }
+  // the yellow box's real size = how many blocks/slabs along each side x their size
+  function refSize(){
+    const n1 = +el('pN1').value, u1 = +el('pU1').value, n2 = +el('pN2').value, u2 = +el('pU2').value;
+    return {L: n1*u1, W: n2*u2, n1, u1, n2, u2};
+  }
+  const fmtM = mm => mm >= 1000 ? (mm/1000).toFixed(2).replace(/\.?0+$/,'') + ' m' : Math.round(mm) + ' mm';
+  function showRefSize(){
+    const r = refSize();
+    el('pRefSize').innerHTML = r.L>0 && r.W>0 ? `Yellow box = <b>${fmtM(r.L)} × ${fmtM(r.W)}</b> (${r.n1} × ${r.u1} mm by ${r.n2} × ${r.u2} mm)` : '';
+  }
+  // the area the quote will use: the photo measurement, or the AI's block count if chosen
+  function finalArea(){
+    const m = measure();
+    if(useCount && check) return {area: check.area_m2, from:'count'};
+    return m.err ? null : {area: m.area, from:'photo'};
+  }
   function result(){
+    showRefSize();
     const m = measure(), box = el('pResult');
-    if(m.err){ box.innerHTML = `<small>${esc(m.err)}</small>`; el('pUse').disabled = true; return; }
-    const warn = m.refShare < 0.003 ? '<br><small>The reference is very small compared with the area, so a small slip on its corners makes a big difference. Use a bigger reference if you can, such as a run of several blocks.</small>' : '';
-    box.innerHTML = `<span class="big">${m.area.toFixed(1)} m²</span><small>Measured from the photo using the ${el('pRefL').value} × ${el('pRefW').value} mm reference.</small>${warn}`;
-    el('pUse').disabled = false;
+    let html = '';
+    if(m.err) html = `<small>${esc(m.err)}</small>`;
+    else {
+      const small = m.refShare < 0.02;
+      html = `<span class="big"${useCount&&check?' style="opacity:.45"':''}>${m.area.toFixed(1)} m²</span><small>Measured from the photo using the yellow box.</small>`;
+      if(small) html += '<br><small><b>The yellow box is small compared with the area</b>, so a slip on its corners or one block miscounted makes a big difference. Stretch it over more blocks and update the counts.</small>';
+    }
+    if(check){
+      const diff = m.err ? 0 : Math.abs(m.area - check.area_m2) / Math.max(m.area, check.area_m2);
+      html += `<div class="p-check${!m.err && diff>0.25?' bad':''}"><b>Block count check: about ${check.area_m2.toFixed(1)} m²</b>`
+        + (check.length_m && check.width_m ? ` (roughly ${check.length_m.toFixed(1)} × ${check.width_m.toFixed(1)} m)` : '')
+        + (check.how ? `<br><small>${esc(check.how)}</small>` : '')
+        + (!m.err && diff>0.25 ? `<br><small><b>The two figures disagree by ${Math.round(diff*100)}%.</b> Check the yellow box covers exactly the number of blocks entered, or use the count.</small>` : '')
+        + `<label class="p-usecount"><input type="checkbox" id="pUseCount"${useCount?' checked':''}> Use the block count instead</label></div>`;
+    }
+    box.innerHTML = html;
+    const cb = el('pUseCount'); if(cb) cb.onchange = ()=>{ useCount = cb.checked; result(); };
+    el('pUse').disabled = !finalArea();
   }
   const status = (t, cls) => { const s = el('pStatus'); s.textContent = t||''; s.className = 'note ' + (cls||''); s.hidden = !t; };
 
@@ -442,7 +473,7 @@ const PHOTO = (()=>{
         c.getContext('2d').drawImage(img, 0, 0, W, H);
         const url = c.toDataURL('image/jpeg', 0.85); b64 = url.split(',')[1];
         el('pImg').src = url; el('pImg').hidden = false; el('pSvg').removeAttribute('hidden'); el('pEmpty').hidden = true;
-        outline = []; ref = []; sugg = null; el('pAiNote').innerHTML = ''; setMode(null);
+        outline = []; ref = []; sugg = null; check = null; useCount = false; el('pAiNote').innerHTML = ''; setMode(null);
         ['pAi','pDraw','pRef','pDel','pClear'].forEach(id=> el(id).disabled = false);
         draw(); status('Press AI outline, or draw the area and mark a reference yourself.');
       };
@@ -451,11 +482,13 @@ const PHOTO = (()=>{
     fr.readAsDataURL(file);
   }
 
-  function setRefSize(L, Wd){
-    el('pRefL').value = Math.round(L); el('pRefW').value = Math.round(Wd);
-    const key = `${Math.round(Math.max(L,Wd))}x${Math.round(Math.min(L,Wd))}`;
-    const opt = [...el('pRefType').options].find(o=>o.value===key);
-    el('pRefType').value = opt ? key : 'custom';
+  function setRefSize(r){
+    const n1 = Math.max(1, Math.round(r.count_12 || 1)), n2 = Math.max(1, Math.round(r.count_23 || 1));
+    const u1 = r.unit_12_mm || (r.length_mm/n1), u2 = r.unit_23_mm || (r.width_mm/n2);
+    el('pN1').value = n1; el('pU1').value = Math.round(u1); el('pN2').value = n2; el('pU2').value = Math.round(u2);
+    const key = r.unit_mm && r.unit_mm.length===2 ? `${Math.round(Math.max(...r.unit_mm))}x${Math.round(Math.min(...r.unit_mm))}` : '';
+    const opt = key && [...el('pRefType').options].find(o=>o.value===key);
+    el('pRefType').value = opt ? key : (u1 % 100 === 0 && u2 % 100 === 0 && Math.max(u1,u2) <= 200 ? '200x100' : 'custom');
   }
 
   async function ai(){
@@ -469,24 +502,25 @@ const PHOTO = (()=>{
       if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
       if(data.error) throw new Error(data.error);
       if(data.outline && data.outline.length>=3) outline = data.outline;
-      if(data.reference){ ref = data.reference.corners; setRefSize(data.reference.length_mm, data.reference.width_mm); }
+      if(data.reference){ ref = data.reference.corners; setRefSize(data.reference); }
+      check = data.count_check && data.count_check.area_m2 > 0 ? data.count_check : null; useCount = !data.reference && !!check;
       if(data.label) el('pLabel').value = data.label;
       sugg = data.suggestions || null;
       const bits = [];
       if(sugg){ const nm = {block:'Block paving',concrete:'Concrete',tarmac:'Tarmac',stone:'Natural stone',imprint:'Imprinted concrete',porcelain:'Porcelain',deck:'Decking',gravel:'Gravel',mixed:'Mixed'};
         if(sugg.surface && sugg.surface!=='unknown') bits.push(`surface: <b>${esc(nm[sugg.surface]||sugg.surface)}</b>`);
         ['soiling','moss','weeds'].forEach(k=>{ if(sugg[k] && sugg[k]!=='unknown') bits.push(`${k}: <b>${esc(sugg[k])}</b>`); }); }
-      if(data.reference && data.reference.what) bits.push(`reference: <b>${esc(data.reference.what)}</b>`);
+      if(data.reference && data.reference.what) bits.push(`yellow box: <b>${esc(data.reference.what)}</b>`);
       el('pAiNote').innerHTML = (bits.length || data.notes) ? `<div class="m-ai"><span class="tag">AI</span> ${bits.join(' · ')}${data.notes?`<div class="hint">${esc(data.notes)}</div>`:''}</div>` : '';
       draw();
-      if(!data.reference) status('AI outlined the area but could not find a reliable reference. Press Mark reference and tap the 4 corners of a block, slab or drain cover.', 'w');
+      if(!data.reference) status('AI outlined the area but could not find a reliable reference. Press Mark reference, tap the 4 corners of a run of blocks or slabs, and enter how many along each side.', 'w');
       else status(`Done (${data.confidence||'unknown'} confidence). Check the yellow corners sit exactly on the joints and the blue outline follows the edges.`, data.confidence==='low' ? 'w' : '');
     }catch(e){ status('AI outline failed: ' + (e.message||e), 'b'); }
     btn.disabled = false; btn.textContent = 'AI outline';
   }
 
   function use(){
-    const m = measure(); if(m.err) return;
+    const m = finalArea(); if(!m) return;
     const surf = sugg && ['block','concrete','tarmac','stone','imprint','porcelain','deck'].includes(sugg.surface) ? sugg.surface : 'block';
     const soil = sugg && ['light','normal','heavy'].includes(sugg.soiling) ? sugg.soiling : 'normal';
     pwRows = pwRows.filter(r=>+r.sqm>0);
@@ -504,12 +538,13 @@ const PHOTO = (()=>{
     svg.addEventListener('pointerup', onUp); svg.addEventListener('pointercancel', onUp);
     el('pAi').onclick = ai;
     el('pDraw').onclick = ()=>{ if(mode==='draw'){ setMode(null); status(''); } else { outline = []; setMode('draw'); draw(); status('Tap each corner of the area in turn, then press Finish outline.'); } };
-    el('pRef').onclick = ()=>{ ref = []; setMode('ref'); draw(); status('Tap the 4 corners of the reference in order around it. Side 1→2 is the length you enter on the right.'); };
+    el('pRef').onclick = ()=>{ ref = []; setMode('ref'); draw(); status('Tap the 4 corners of the reference in order around it. Cover as many whole blocks or slabs as you can, then enter how many along each side.'); };
     el('pDel').onclick = ()=>{ setMode(mode==='del' ? null : 'del'); status(mode==='del' ? 'Tap a white dot to remove it.' : ''); };
-    el('pClear').onclick = ()=>{ outline = []; ref = []; setMode(null); draw(); status(''); };
-    el('pRefType').addEventListener('change', ()=>{ const v = el('pRefType').value; if(v!=='custom'){ const [a,b] = v.split('x'); el('pRefL').value = a; el('pRefW').value = b; } draw(); });
-    ['pRefL','pRefW'].forEach(id=> el(id).addEventListener('input', ()=>{ el('pRefType').value = 'custom'; result(); }));
-    el('pSwap').onclick = ()=>{ const a = el('pRefL').value; el('pRefL').value = el('pRefW').value; el('pRefW').value = a; result(); };
+    el('pClear').onclick = ()=>{ outline = []; ref = []; check = null; useCount = false; setMode(null); draw(); status(''); };
+    el('pRefType').addEventListener('change', ()=>{ const v = el('pRefType').value; if(v!=='custom'){ const [a,b] = v.split('x'); el('pU1').value = a; el('pU2').value = b; } draw(); });
+    ['pN1','pN2'].forEach(id=> el(id).addEventListener('input', result));
+    ['pU1','pU2'].forEach(id=> el(id).addEventListener('input', ()=>{ el('pRefType').value = 'custom'; result(); }));
+    el('pSwap').onclick = ()=>{ const n = el('pN1').value, u = el('pU1').value; el('pN1').value = el('pN2').value; el('pU1').value = el('pU2').value; el('pN2').value = n; el('pU2').value = u; result(); };
     el('pUse').onclick = use;
     document.querySelectorAll('#mSrc button').forEach(b=> b.onclick = ()=>{
       const photo = b.dataset.s==='photo';
