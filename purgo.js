@@ -204,8 +204,10 @@ function calc(){
     return Math.min(v, crew);
   };
   const grp = name => { const g={name,lines:[]}; o.groups.push(g); return g; };
-  const line = (g,label,amt,detail='') => { if(amt) g.lines.push({label,amt,detail}); };
-  const bill = (g,label,h,w,fold) => { if(h>0){ line(g,label,h*w*L,`${+h.toFixed(2)}h × ${w} worker${w>1?'s':''} × ${gbp(L)}`); if(fold && g.lines.length) g.lines[g.lines.length-1].fold = true; } };
+  const line = (g,label,amt,detail='') => { if(!amt) return null; const l = {label,amt,detail}; g.lines.push(l); return l; };
+  // hide a line from the customer and spread its price over the given service lines (default: the group's first line)
+  const hide = (l, targets, name) => { if(l){ l.fold = true; l.foldTo = (targets||[]).filter(Boolean); l.foldName = name || l.label.toLowerCase(); } return l; };
+  const bill = (g,label,h,w,fold) => { if(!(h>0)) return null; const l = line(g,label,h*w*L,`${+h.toFixed(2)}h × ${w} worker${w>1?'s':''} × ${gbp(L)}`); if(fold) hide(l, null, 'set-up & pack-down'); return l; };
   const task = (id,label,dur,w,pri,after=[]) => { if(dur>0.0001) o.tasks.push({id,label,dur,w,pri,after}); };
   const chemCharge = (g, id, area, what) => {
     const c = R.chems.find(x=>x.id===id); if(!c || !area) return 0;
@@ -229,8 +231,8 @@ function calc(){
     pwRows.forEach(r=>{
       const s = SURF[r.surf]; const sqm = +r.sqm||0; if(!sqm) return;
       let t = sqm / R[s[1]];
-      line(g, `${r.name}: ${s[0]} wash & slurry removal`, sqm*R.pwRate, `${sqm} m² × ${gbp(R.pwRate)}`); washSum += sqm*R.pwRate;
-      if(r.soil==='heavy'){ t *= 1.35; line(g, `${r.name}: heavy soiling`, sqm*R.heavySoil, `${sqm} m² × ${gbp(R.heavySoil)}`); washSum += sqm*R.heavySoil; }
+      const wl = line(g, `${r.name}: ${s[0]} wash & slurry removal`, sqm*R.pwRate, `${sqm} m² × ${gbp(R.pwRate)}`); washSum += sqm*R.pwRate;
+      if(r.soil==='heavy'){ t *= 1.35; hide(line(g, `${r.name}: heavy soiling`, sqm*R.heavySoil, `${sqm} m² × ${gbp(R.heavySoil)}`), [wl], 'heavy soiling'); washSum += sqm*R.heavySoil; }
       rig += t;
       if(r.sand){
         const bags = Math.ceil(sqm / R.sandCover); const matc = bags*(R.sandBag||0); const sellBag = R.sandBagSell!=null ? R.sandBagSell : (R.sandBag||0)*(1+(R.sandMarkup||0)/100); const sH = sqm/R.sandRate;
@@ -277,20 +279,20 @@ function calc(){
     const g = grp('Windows');
     const w = want('wWn', crew);
     const mode = $('wnMode').value, t = $('wnType').value, n = num('wnCount'), st = +$('wnSt').value;
-    let base;
+    let base; const wls = [];
     if(mode==='type'){
       const std = R['std'+t]; const extra = Math.max(0, n-std);
       base = R['price'+t] + extra*R.perWin;
-      line(g, `${WIN_NAMES[t]} window clean`, R['price'+t], `Standard ${WIN_NAMES[t].toLowerCase()} up to ${std} windows`);
-      if(extra) line(g, `Extra windows × ${extra}`, extra*R.perWin, `${extra} × ${gbp(R.perWin)} over standard`);
+      wls.push(line(g, `${WIN_NAMES[t]} window clean`, R['price'+t], `Standard ${WIN_NAMES[t].toLowerCase()} up to ${std} windows`));
+      if(extra) wls.push(line(g, `Extra windows × ${extra}`, extra*R.perWin, `${extra} × ${gbp(R.perWin)} over standard`));
       $('wnHint').textContent = `Standard ${WIN_NAMES[t].toLowerCase()} covers up to ${std} windows; extras charged at ${gbp(R.perWin)} each.`;
     } else {
       base = n*R.perWin;
-      line(g, `Window clean, ${n} windows`, base, `${n} × ${gbp(R.perWin)}`);
+      wls.push(line(g, `Window clean, ${n} windows`, base, `${n} × ${gbp(R.perWin)}`));
       $('wnHint').textContent = 'Per-window pricing suits commercial frontages and non-standard properties. Property size sets the sills & doors price.';
     }
-    if($('wnSills').checked) line(g, 'Sills & doors', R['sill'+t], WIN_NAMES[t]);
-    if($('wnFirst').checked) line(g, 'First clean uplift', (base + ($('wnSills').checked?R['sill'+t]:0))*R.firstClean/100, `+${R.firstClean}% for build-up on first visit`);
+    if($('wnSills').checked) wls.push(line(g, 'Sills & doors', R['sill'+t], WIN_NAMES[t]));
+    if($('wnFirst').checked) hide(line(g, 'First clean uplift', (base + ($('wnSills').checked?R['sill'+t]:0))*R.firstClean/100, `+${R.firstClean}% for build-up on first visit`), wls, 'first clean uplift');
     const cons = num('wnCons'); if(cons) line(g, 'Conservatory roof', cons);
     const litres = n*R.waterPerWin*($('wnSills').checked?1.3:1)*($('wnFirst').checked?1.5:1);
     o.cost.water += litres*R.waterCost;
@@ -307,11 +309,11 @@ function calc(){
     const pitch = $('rfP').value, moss = $('rfMoss').value;
     if(a){
       const w = want('wRf', crew);
-      let t = 0, price = 0;
-      if(m!=='lpw'){ line(g, `Roof scrape & moss removal (${a} m²)`, a*R.scrape, `${a} m² × ${gbp(R.scrape)}`); price += a*R.scrape; t += a/(R.scrapeRate*w); }
-      if(m!=='scrape'){ line(g, `Roof low pressure wash (${a} m²)`, a*R.lpw, `${a} m² × ${gbp(R.lpw)} · 8" surface cleaner`); price += a*R.lpw; const lt = a/R.lpwRate; t += lt; o.rigH += lt; }
+      let t = 0, price = 0; const rls = [];
+      if(m!=='lpw'){ rls.push(line(g, `Roof scrape & moss removal (${a} m²)`, a*R.scrape, `${a} m² × ${gbp(R.scrape)}`)); price += a*R.scrape; t += a/(R.scrapeRate*w); }
+      if(m!=='scrape'){ rls.push(line(g, `Roof low pressure wash (${a} m²)`, a*R.lpw, `${a} m² × ${gbp(R.lpw)} · 8" surface cleaner`)); price += a*R.lpw; const lt = a/R.lpwRate; t += lt; o.rigH += lt; }
       const up = (pitch==='steep'?R.steepUp:0) + (moss==='moderate'?R.mossModUp:moss==='heavy'?R.mossHeavyUp:0);
-      if(up) line(g, `${pitch==='steep'?'Steep pitch':''}${pitch==='steep'&&moss!=='light'?' + ':''}${moss!=='light'?moss+' moss':''} uplift`, price*up/100, `+${up}% on roof price`);
+      if(up) hide(line(g, `${pitch==='steep'?'Steep pitch':''}${pitch==='steep'&&moss!=='light'?' + ':''}${moss!=='light'?moss+' moss':''} uplift`, price*up/100, `+${up}% on roof price`), rls, 'pitch/moss uplift');
       t *= (pitch==='steep'?1.3:1) * ({light:1,moderate:1.2,heavy:1.45}[moss]);
       o.setupT += R.roofSetup;
       bill(g, 'Set-up & pack-down', R.roofSetup, wSet, true);
@@ -321,9 +323,9 @@ function calc(){
         const wt = want('wTower', 2);
         const pos = Math.max(1, num('rfPos'));
         const eH = pos*R.towerErect, dH = pos*R.towerDismantle;
-        bill(g, `Scaffold tower erect & dismantle (${pos} position${pos>1?'s':''})`, eH+dH, wt);
+        hide(bill(g, `Scaffold tower erect & dismantle (${pos} position${pos>1?'s':''})`, eH+dH, wt), rls, 'scaffold tower');
         const days = Math.ceil((R.roofSetup + t + eH + dH) / R.dayHours);
-        line(g, `Scaffold tower use (${days} day${days>1?'s':''})`, days*R.towerDay, `${days} × ${gbp(R.towerDay)}`);
+        hide(line(g, `Scaffold tower use (${days} day${days>1?'s':''})`, days*R.towerDay, `${days} × ${gbp(R.towerDay)}`), rls, 'scaffold tower');
         task('te', 'Tower erect', eH, wt, 2);
         task('rf', 'Roof cleaning', t, w, 3, ['te']);
         task('td', 'Tower dismantle', dH, wt, 4, ['rf']);
@@ -345,15 +347,27 @@ function calc(){
   CX.forEach(([k,l])=>{ if($(k).checked){ bill(cg, l, R[k], wCx); task(k, l, R[k], wCx, 1); } });
   if(num('cxOther')){ const l = $('cxOtherD').value || 'Other ancillary time'; bill(cg, l, num('cxOther'), wCx); task('cxo', l, num('cxOther'), wCx, 1); }
 
-  // Fold set-up & pack-down into the first service line of each group (not shown separately to the customer)
+  // Hidden lines (set-up, uplifts, scaffold tower) are built into the service lines the customer sees
+  const spread = (amt, targets, name) => {
+    const tot = targets.reduce((x,t)=>x+Math.max(0,t.amt),0);
+    let left = Math.round(amt*100)/100;
+    targets.forEach((t,i)=>{
+      const part = i===targets.length-1 ? left : Math.round((tot>0 ? amt*Math.max(0,t.amt)/tot : amt/targets.length)*100)/100;
+      left = Math.round((left-part)*100)/100;
+      t.amt += part; t.extras = t.extras || {}; t.extras[name] = (t.extras[name]||0) + part;
+    });
+  };
   o.groups.forEach(g=>{
     const f = g.lines.filter(l=>l.fold); if(!f.length) return;
-    const amt = f.reduce((s,l)=>s+l.amt,0);
     g.lines = g.lines.filter(l=>!l.fold);
-    const main = g.lines[0];
-    if(main){ main.amt += amt; main.detail += ` · incl. ${gbp(amt)} set-up & pack-down`; }
-    else g.lines.push({label:g.name, amt, detail:'Set-up & pack-down'});
+    f.forEach(l=>{
+      let targets = (l.foldTo||[]).filter(t=>g.lines.includes(t));
+      if(!targets.length && g.lines[0]) targets = [g.lines[0]];
+      if(targets.length) spread(l.amt, targets, l.foldName);
+      else g.lines.push({label:g.name, amt:l.amt, detail:l.foldName});
+    });
   });
+  const noteExtras = () => o.groups.forEach(g=>g.lines.forEach(l=>{ if(l.extras){ l.detail += Object.entries(l.extras).map(([k,v])=>` · incl. ${gbp(v)} ${k}`).join(''); delete l.extras; } }));
 
   // Commercial
   const servicesSub = o.groups.reduce((s,g)=>s+g.lines.reduce((a,b)=>a+b.amt,0),0);
@@ -361,7 +375,7 @@ function calc(){
     const g = grp('Commercial');
     if($('coInd').checked){ bill(g,'Site induction', R.cx_ind, crew); task('ind','Site induction', R.cx_ind, crew, 1); }
     if($('coBar').checked){ bill(g,'Barriers / pedestrian management', R.cx_bar, wCx); task('bar','Barriers', R.cx_bar, wCx, 1); }
-    if($('coOoh').checked) line(g, 'Out of hours uplift', servicesSub*R.ooh/100, `+${R.ooh}% on service work`);
+    if($('coOoh').checked && servicesSub>0){ const svc = o.groups.filter(x=>x!==g).flatMap(x=>x.lines); spread(servicesSub*R.ooh/100, svc, `out-of-hours +${R.ooh}%`); }
     if($('coRams').checked) line(g, 'RAMS / method statement', R.rams);
     const p = num('coPerm'); if(p) line(g,'Permits / traffic management', p);
   }
@@ -381,6 +395,8 @@ function calc(){
   o.hours = Math.max(0, ...o.tasks.map(t=>t.end));
   o.busy = busy;
   o.idle = busy.map(b=>Math.max(0, o.hours-b));
+
+  noteExtras();
 
   // Travel
   const tv = travel(); o.tv = tv;
@@ -492,7 +508,7 @@ function quoteHTML(m){
   const td = 'padding:6px 10px;border-bottom:1px solid #d4e4ee;vertical-align:top;';
   const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;';
   let h = `<div style="${F}color:#132f47;font-size:14px;line-height:1.45;max-width:640px">`;
-  h += `<div style="font-size:18px;font-weight:800;letter-spacing:-.01em">Purgō exterior cleaning</div>`;
+  h += `<div style="font-size:18px;font-weight:800;letter-spacing:-.01em">Purgō</div>`;
   h += `<div style="color:#53708a;font-size:13px;margin:2px 0 12px">Quote ${esc(m.ref)} &nbsp;·&nbsp; ${esc(m.date)}</div>`;
   if(m.customer || m.address) h += `<div style="margin-bottom:12px">${m.customer?`<b>${esc(m.customer)}</b><br>`:''}${esc(m.address)}</div>`;
   h += `<table style="${F}border-collapse:collapse;width:100%;font-size:14px;color:#132f47">`;
@@ -515,7 +531,7 @@ function quoteHTML(m){
 function quoteText(m){
   const W = 54, pad = (l,a) => { const s = gbp(a); const t = l.length > W-s.length-1 ? l.slice(0, W-s.length-2)+'…' : l; return t + ' '.repeat(Math.max(1, W - t.length - s.length)) + s; };
   const rule = '-'.repeat(W);
-  const L = ['PURGŌ EXTERIOR CLEANING', `Quote ${m.ref} · ${m.date}`, ''];
+  const L = ['PURGŌ', `Quote ${m.ref} · ${m.date}`, ''];
   if(m.customer) L.push(m.customer); if(m.address) L.push(m.address); if(m.customer||m.address) L.push('');
   m.groups.forEach(g=>{ L.push(g.name.toUpperCase()); g.lines.forEach(l=>L.push(pad(l.label,l.amt))); L.push(pad(`${g.name} subtotal`, g.sub)); L.push(''); });
   L.push(rule, pad('Subtotal', m.sub)); if(m.vat) L.push(pad(`VAT ${m.vatRate}%`, m.vat)); L.push(pad(m.vat?'TOTAL':'TOTAL (no VAT)', m.total), rule, '');
