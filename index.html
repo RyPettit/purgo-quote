@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=fba19c19a2">
+<link rel="stylesheet" href="purgo.css?v=19a47e8d35">
 </head>
 <body>
 <header class="topbar">
@@ -237,8 +237,8 @@
         <div id="planBox"></div>
         <div>
           <h3>Customer quote</h3>
-          <textarea id="qtext" readonly></textarea>
-          <div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn pri" type="button" id="copyQ">Copy quote text</button><span id="copied" class="hint" hidden>Copied</span></div>
+          <div id="qPreview" class="qpreview"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap"><button class="btn pri" type="button" id="copyQ">Copy quote</button><span id="copied" class="hint" hidden>Copied</span></div>
         </div>
       </div>
     </aside>
@@ -297,6 +297,6 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=14d59722e5"></script>
+<script src="purgo.js?v=7d58077698"></script>
 </body>
 </html>

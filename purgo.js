@@ -471,22 +471,63 @@ function render(){
   else if(normPc($('pc').value).length>=5 && PC) lb += `<span class="chip off">Postcode not in list</span>`;
   if(tv.miles) lb += `<span class="chip">${tv.miles} miles ${tv.src==='manual'?'(manual)':'by road, est.'}</span><span class="chip">${Math.round(o.travelH*60)} min each way</span>`;
   if(PC || tv.src==='manual') $('locBox').innerHTML = lb;
-  $('qtext').value = quoteText(o);
+  renderCustomerQuote(o);
 }
-function quoteText(o){
-  const L = [];
-  L.push('PURGŌ EXTERIOR CLEANING', `Quote ${refStr}   Date: ${new Date().toLocaleDateString('en-GB')}`, '');
-  L.push(`Customer: ${$('cust').value}`, `Address: ${$('addr').value}${$('pc').value?', '+fmtPc($('pc').value):''}`, '');
-  o.groups.forEach(g=>{ if(!g.lines.length) return; L.push(g.name.toUpperCase()); g.lines.forEach(l=>L.push(`  ${l.label.padEnd(44,' ')} ${gbp(l.amt)}`)); L.push(''); });
-  L.push(`Subtotal ${gbp(o.sub)}`);
-  if(o.vat) L.push(`VAT ${R.vat}% ${gbp(o.vat)}`);
-  L.push(`TOTAL ${gbp(o.total)}`, '');
-  if(ctype==='com' && num('coFreq')>1) L.push(`Price per visit. ${num('coFreq')} visits per year = ${gbp(o.total*num('coFreq'))} annually.`, '');
+/* ---------- customer quote: table preview, rich copy and plain text ---------- */
+function quoteModel(o){
+  const groups = o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:l.amt})), sub:g.lines.reduce((s,l)=>s+l.amt,0)}));
   const notes = [...new Set(o.notes)];
-  L.push('NOTES'); notes.forEach(n=>L.push('- '+n));
-  L.push('- Quote valid for 30 days. Price based on the information provided; we will confirm on arrival before starting.');
+  notes.push('Quote valid for 30 days. Price based on the information provided; we will confirm on arrival before starting.');
+  return {
+    ref:refStr, date:new Date().toLocaleDateString('en-GB'),
+    customer:$('cust').value.trim(), address:[$('addr').value.trim(), fmtPc($('pc').value)].filter(Boolean).join(', '),
+    groups, sub:o.sub, vat:o.vat, vatRate:R.vat, total:o.total,
+    annual: (ctype==='com' && num('coFreq')>1) ? {visits:num('coFreq'), total:o.total*num('coFreq')} : null,
+    notes
+  };
+}
+function quoteHTML(m){
+  // inline styles so the table survives being pasted into an email
+  const F = "font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;";
+  const td = 'padding:6px 10px;border-bottom:1px solid #d4e4ee;vertical-align:top;';
+  const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;';
+  let h = `<div style="${F}color:#132f47;font-size:14px;line-height:1.45;max-width:640px">`;
+  h += `<div style="font-size:18px;font-weight:800;letter-spacing:-.01em">Purgō exterior cleaning</div>`;
+  h += `<div style="color:#53708a;font-size:13px;margin:2px 0 12px">Quote ${esc(m.ref)} &nbsp;·&nbsp; ${esc(m.date)}</div>`;
+  if(m.customer || m.address) h += `<div style="margin-bottom:12px">${m.customer?`<b>${esc(m.customer)}</b><br>`:''}${esc(m.address)}</div>`;
+  h += `<table style="${F}border-collapse:collapse;width:100%;font-size:14px;color:#132f47">`;
+  h += `<thead><tr><th style="${td}text-align:left;background:#132f47;color:#fff;font-weight:700">Item</th><th style="${td}${num}background:#132f47;color:#fff;font-weight:700">Price</th></tr></thead><tbody>`;
+  m.groups.forEach(g=>{
+    h += `<tr><td colspan="2" style="${td}background:#e2eff7;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#326986">${esc(g.name)}</td></tr>`;
+    g.lines.forEach(l=>{ h += `<tr><td style="${td}">${esc(l.label)}</td><td style="${td}${num}">${gbp(l.amt)}</td></tr>`; });
+    h += `<tr><td style="${td}text-align:right;font-weight:700">${esc(g.name)} subtotal</td><td style="${td}${num}font-weight:700">${gbp(g.sub)}</td></tr>`;
+  });
+  h += `</tbody><tfoot>`;
+  h += `<tr><td style="${td}text-align:right">Subtotal</td><td style="${td}${num}">${gbp(m.sub)}</td></tr>`;
+  if(m.vat) h += `<tr><td style="${td}text-align:right">VAT ${m.vatRate}%</td><td style="${td}${num}">${gbp(m.vat)}</td></tr>`;
+  h += `<tr><td style="padding:10px;text-align:right;font-weight:800;background:#132f47;color:#fff">Total${m.vat?'':' (no VAT)'}</td><td style="padding:10px;${num}font-weight:800;font-size:16px;background:#132f47;color:#fff">${gbp(m.total)}</td></tr>`;
+  h += `</tfoot></table>`;
+  if(m.annual) h += `<p style="margin:10px 0 0">Price per visit. ${m.annual.visits} visits per year = <b>${gbp(m.annual.total)}</b> a year.</p>`;
+  h += `<div style="margin-top:14px;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#326986">Notes</div><ul style="margin:6px 0 0;padding-left:18px">${m.notes.map(n=>`<li style="margin:3px 0">${esc(n)}</li>`).join('')}</ul>`;
+  h += `<p style="margin:14px 0 0;color:#53708a">Purgō, family run exterior cleaning<br>Tel 07930 877034 · www.purgo-clean.com</p></div>`;
+  return h;
+}
+function quoteText(m){
+  const W = 54, pad = (l,a) => { const s = gbp(a); const t = l.length > W-s.length-1 ? l.slice(0, W-s.length-2)+'…' : l; return t + ' '.repeat(Math.max(1, W - t.length - s.length)) + s; };
+  const rule = '-'.repeat(W);
+  const L = ['PURGŌ EXTERIOR CLEANING', `Quote ${m.ref} · ${m.date}`, ''];
+  if(m.customer) L.push(m.customer); if(m.address) L.push(m.address); if(m.customer||m.address) L.push('');
+  m.groups.forEach(g=>{ L.push(g.name.toUpperCase()); g.lines.forEach(l=>L.push(pad(l.label,l.amt))); L.push(pad(`${g.name} subtotal`, g.sub)); L.push(''); });
+  L.push(rule, pad('Subtotal', m.sub)); if(m.vat) L.push(pad(`VAT ${m.vatRate}%`, m.vat)); L.push(pad(m.vat?'TOTAL':'TOTAL (no VAT)', m.total), rule, '');
+  if(m.annual) L.push(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, '');
+  L.push('NOTES'); m.notes.forEach(n=>L.push('- '+n));
   L.push('', 'Purgō, family run exterior cleaning', 'Tel 07930 877034 · www.purgo-clean.com');
   return L.join('\n');
+}
+let lastQuoteModel = null;
+function renderCustomerQuote(o){
+  lastQuoteModel = quoteModel(o);
+  $('qPreview').innerHTML = quoteHTML(lastQuoteModel);
 }
 
 /* ---------- save / load ---------- */
@@ -533,10 +574,20 @@ document.querySelectorAll('#ctype button').forEach(b=> b.onclick = ()=>{
   if(ctype==='com'){ $('wnMode').value='count'; }
   render();
 });
-$('copyQ').onclick = ()=>{
-  const ta=$('qtext');
-  const done=()=>{ $('copied').hidden=false; setTimeout(()=>$('copied').hidden=true,1500); };
-  try{ navigator.clipboard.writeText(ta.value).then(done, ()=>{ ta.select(); }); }catch(err){ ta.select(); }
+$('copyQ').onclick = async ()=>{
+  const m = lastQuoteModel || quoteModel(last || calc());
+  const html = quoteHTML(m), text = quoteText(m);
+  const done = msg => { $('copied').textContent = msg; $('copied').hidden = false; setTimeout(()=>$('copied').hidden = true, 2500); };
+  try{
+    if(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+      await navigator.clipboard.write([new ClipboardItem({'text/html': new Blob([html], {type:'text/html'}), 'text/plain': new Blob([text], {type:'text/plain'})})]);
+      return done('Copied. Paste into an email to keep the table.');
+    }
+    await navigator.clipboard.writeText(text); done('Copied');
+  }catch(e){
+    try{ await navigator.clipboard.writeText(text); done('Copied'); }
+    catch(e2){ const r = document.createRange(); r.selectNodeContents($('qPreview')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); done('Selected. Press copy on your keyboard.'); }
+  }
 };
 $('newJob').onclick = ()=>{
   ['cust','addr','pc','phone','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
