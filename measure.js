@@ -14,7 +14,7 @@ const MEASURE = (()=>{
   const COLORS = {ai:'#6da7c4', manual:'#f2c14e'};
   const KIND_LABEL = {patio:'Drive / patio', roof:'Roof', gutters:'Gutters'};
   let gmap = null, geocoder = null, loading = null;
-  let kind = 'patio', target = null, drawing = null, delMode = false;
+  let kind = 'patio', target = null, drawing = null, delMode = false, splitPts = null, splitLine = null;
   let shapes = [];        // {id, label, type:'area'|'line', kind, source, pitch, obj}
   let suggestions = null, lastNotes = '';
   let seq = 0;
@@ -46,7 +46,7 @@ const MEASURE = (()=>{
     });
     gmap.setTilt(0);
     geocoder = new google.maps.Geocoder();
-    gmap.addListener('click', e=>{ if(drawing) addPoint(e.latLng); });
+    gmap.addListener('click', e=>{ if(splitPts) splitClick(e.latLng); else if(drawing) addPoint(e.latLng); });
   }
 
   function measureOf(s){
@@ -87,6 +87,74 @@ const MEASURE = (()=>{
     status(type==='line' ? 'Tap along the gutter line, then press Finish shape.' : 'Tap each corner in turn, then press Finish shape.', '');
     gmap.setOptions({draggableCursor:'crosshair'});
   }
+  /* ----- split along a line (party wall) and keep the side with the cross ----- */
+  function startSplit(){
+    stopDraw();
+    if(!shapes.some(s=>s.kind===kind)){ status('Outline something first, then split it.', 'w'); return; }
+    splitPts = [];
+    shapes.forEach(s=> s.obj.setOptions({clickable:false}));
+    gmap.setOptions({draggableCursor:'crosshair'});
+    el('mSplit').textContent = 'Cancel split'; el('mSplit').classList.add('pri');
+    status('Tap one end of the party wall, then the other end. The side with the cross is kept.', '');
+  }
+  function endSplit(msg, cls){
+    splitPts = null;
+    if(splitLine){ const l = splitLine; setTimeout(()=>l.setMap(null), 1200); splitLine = null; }
+    shapes.forEach(s=> s.obj.setOptions({clickable: s.kind===kind}));
+    gmap.setOptions({draggableCursor:null});
+    el('mSplit').textContent = 'Split'; el('mSplit').classList.remove('pri');
+    status(msg||'', cls);
+  }
+  function splitClick(ll){
+    splitPts.push(ll);
+    if(!splitLine) splitLine = new google.maps.Polyline({map:gmap, path:[ll], strokeColor:'#ffffff', strokeWeight:3, strokeOpacity:1, zIndex:5, clickable:false,
+      icons:[{icon:{path:'M 0,-1 0,1', strokeOpacity:1, scale:3}, offset:'0', repeat:'12px'}]});
+    else splitLine.getPath().push(ll);
+    if(splitPts.length < 2) return;
+    const [a, b] = splitPts, ref = gmap.getCenter();
+    const k = Math.cos(ref.lat()*Math.PI/180);
+    const P = q => [q.lng()*k, q.lat()], Q = p => ({lat:p[1], lng:p[0]/k});
+    const A = P(a), B = P(b);
+    const side = p => (B[0]-A[0])*(p[1]-A[1]) - (B[1]-A[1])*(p[0]-A[0]);
+    const keep = Math.sign(side(P(ref))) || 1;
+    const inside = p => side(p)*keep >= 0;
+    const cut = (p, q) => { const sp = side(p), sq = side(q), t = sp/(sp-sq); return [p[0]+(q[0]-p[0])*t, p[1]+(q[1]-p[1])*t]; };
+    let changed = 0;
+    shapes.filter(s=>s.kind===kind).slice().forEach(s=>{
+      const pts = s.obj.getPath().getArray().map(P);
+      if(s.type==='area'){
+        const out = [];
+        for(let i=0;i<pts.length;i++){
+          const cur = pts[i], prev = pts[(i+pts.length-1)%pts.length];
+          if(inside(cur)){ if(!inside(prev)) out.push(cut(prev,cur)); out.push(cur); }
+          else if(inside(prev)) out.push(cut(prev,cur));
+        }
+        if(out.length===pts.length && out.every((p,i)=>p===pts[i])) return;
+        changed++;
+        if(out.length < 3) removeShape(s.id); else s.obj.setPath(out.map(Q));
+      } else {
+        const pieces = []; let curPiece = [], crossed = false;
+        for(let i=0;i<pts.length;i++){
+          const p = pts[i];
+          if(i>0){ const prev = pts[i-1];
+            if(inside(prev) !== inside(p)){ crossed = true; const x = cut(prev,p); if(inside(prev)){ curPiece.push(x); pieces.push(curPiece); curPiece = []; } else curPiece.push(x); } }
+          if(inside(p)) curPiece.push(p);
+        }
+        if(curPiece.length) pieces.push(curPiece);
+        const good = pieces.filter(pc=>pc.length>=2);
+        if(!crossed && pts.every(inside)) return;
+        changed++;
+        if(!good.length){ removeShape(s.id); return; }
+        s.obj.setPath(good[0].map(Q));
+        good.slice(1).forEach((pc,i)=> addShape({label:s.label+' ('+(i+2)+')', type:'line', path:pc.map(Q), source:s.source, pitch:s.pitch}));
+      }
+      // re-attach change listeners to the new path
+      const np = s.obj.getPath(); ['set_at','insert_at','remove_at'].forEach(ev=> np.addListener(ev, ()=> list()));
+    });
+    list();
+    endSplit(changed ? 'Split done. Kept the side with the cross; drag any dots to tidy up.' : 'That line did not cross anything. Try again across the outline.', changed ? '' : 'w');
+  }
+
   function stopDraw(){
     if(!drawing) return;
     const min = drawing.type==='line' ? 2 : 3;
@@ -239,7 +307,8 @@ const MEASURE = (()=>{
     el('mAi').onclick = ()=> gmap && aiOutline();
     el('mDraw').onclick = ()=>{ if(!gmap) return; drawing ? stopDraw() : startDraw(); };
     el('mDelPts').onclick = ()=>{ delMode = !delMode; el('mDelPts').classList.toggle('pri', delMode); el('mDelPts').textContent = delMode ? 'Done deleting' : 'Delete points'; status(delMode ? 'Tap a corner dot to remove it.' : ''); };
-    el('mClear').onclick = ()=>{ shapes.filter(s=>s.kind===kind).forEach(s=>removeShape(s.id)); stopDraw(); };
+    el('mClear').onclick = ()=>{ if(splitPts) endSplit(); shapes.filter(s=>s.kind===kind).forEach(s=>removeShape(s.id)); stopDraw(); };
+    el('mSplit').onclick = ()=>{ if(!gmap) return; splitPts ? endSplit() : startSplit(); };
     el('mUse').onclick = useInQuote;
     el('mBack').onclick = ()=>{ stopDraw(); show('quote'); };
     el('mList').addEventListener('input', e=>{ const id = +e.target.dataset.sid; const s = shapes.find(x=>x.id===id); if(!s) return;

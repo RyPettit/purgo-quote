@@ -653,9 +653,10 @@ function show(view){
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
   if(b.dataset.view==='admin' && ratesDirty===false) renderRates();
+  if(b.dataset.view==='measure' && typeof MEASURE!=='undefined'){ MEASURE.open(null); return; }
   show(b.dataset.view);
 });
-window.addEventListener('hashchange', ()=>{ const v = location.hash.slice(1); if(VIEWS.includes(v) && v!=='login') show(v); });
+window.addEventListener('hashchange', ()=>{ const v = location.hash.slice(1); if(!VIEWS.includes(v) || v==='login') return; if(v==='measure' && typeof MEASURE!=='undefined' && document.getElementById('view-measure').hidden){ MEASURE.open(null); return; } show(v); });
 
 /* ---------- network status & offline outbox ---------- */
 function outbox(){ return LS.get('purgoOutbox:'+(ME&&ME.id), []); }
