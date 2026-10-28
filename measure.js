@@ -320,3 +320,204 @@ const MEASURE = (()=>{
   bind();
   return {open, snapshot, restore, _pending:null};
 })();
+
+/* =====================================================================
+   Photo measuring (dev): the paving is the ruler.
+   A reference rectangle of known size on the ground gives a perspective
+   transform (homography) from photo pixels to metres on the ground.
+   ===================================================================== */
+const PHOTO = (()=>{
+  const el = id => document.getElementById(id);
+  const MAXPX = 1568;
+  let W = 0, H = 0, b64 = null;
+  let outline = [], ref = [], mode = null, sugg = null, drag = null;
+
+  // ---- maths ----
+  function solve(A, b){ // Gaussian elimination, n x n
+    const n = b.length; const M = A.map((r,i)=>[...r, b[i]]);
+    for(let c=0;c<n;c++){
+      let p = c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p = r;
+      if(Math.abs(M[p][c]) < 1e-12) return null;
+      [M[c], M[p]] = [M[p], M[c]];
+      for(let r=0;r<n;r++){ if(r===c) continue; const f = M[r][c]/M[c][c]; for(let k=c;k<=n;k++) M[r][k] -= f*M[c][k]; }
+    }
+    return M.map((r,i)=>r[n]/r[i]);
+  }
+  function homography(src, dst){
+    const A = [], b = [];
+    for(let i=0;i<4;i++){ const [x,y] = src[i], [u,v] = dst[i];
+      A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u);
+      A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v); }
+    const h = solve(A, b); return h ? [...h, 1] : null;
+  }
+  const apply = (h, [x,y]) => { const d = h[6]*x + h[7]*y + 1; return {p:[(h[0]*x + h[1]*y + h[2])/d, (h[3]*x + h[4]*y + h[5])/d], d}; };
+  const shoelace = pts => { let s = 0; for(let i=0;i<pts.length;i++){ const [x1,y1] = pts[i], [x2,y2] = pts[(i+1)%pts.length]; s += x1*y2 - x2*y1; } return Math.abs(s)/2; };
+  function measure(){
+    if(outline.length < 3) return {err:'Outline the drive or patio first.'};
+    if(ref.length < 4) return {err:'Mark the four corners of the reference (yellow box).'};
+    const L = +el('pRefL').value/1000, Wd = +el('pRefW').value/1000;
+    if(!(L>0 && Wd>0)) return {err:'Enter the reference size in mm.'};
+    const h = homography(ref, [[0,0],[L,0],[L,Wd],[0,Wd]]);
+    if(!h) return {err:'The reference corners are in a straight line. Move them to the four corners of the box.'};
+    const s0 = Math.sign(apply(h, ref[0]).d);
+    const mapped = outline.map(q=>apply(h,q));
+    if(mapped.some(m=>Math.sign(m.d)!==s0)) return {err:'Part of the outline is above the horizon for this reference. Check the yellow corners are on the ground and in order.'};
+    const area = shoelace(mapped.map(m=>m.p));
+    const refPx = shoelace(ref), outPx = shoelace(outline);
+    return {area, refShare: refPx/Math.max(1,outPx)};
+  }
+  // exposed for testing
+  window.__photoMath = {homography, apply, shoelace};
+
+  // ---- drawing ----
+  const r = () => Math.max(W,H)/110;
+  function draw(){
+    const svg = el('pSvg'); if(!W) return;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const R = r(), sw = R/2.4;
+    let s = '';
+    if(outline.length){
+      const pts = outline.map(p=>p.join(',')).join(' ');
+      s += outline.length>=3 ? `<polygon points="${pts}" fill="rgba(109,167,196,.32)" stroke="#6da7c4" stroke-width="${sw}"/>` : `<polyline points="${pts}" fill="none" stroke="#6da7c4" stroke-width="${sw}"/>`;
+      if(outline.length>=3) outline.forEach((p,i)=>{ const q = outline[(i+1)%outline.length]; s += `<circle class="mid" data-mid="${i}" cx="${(p[0]+q[0])/2}" cy="${(p[1]+q[1])/2}" r="${R*0.7}" fill="rgba(255,255,255,.55)" stroke="#132f47" stroke-width="${sw/2}"/>`; });
+      outline.forEach((p,i)=>{ s += `<circle class="pt" data-o="${i}" cx="${p[0]}" cy="${p[1]}" r="${R}" fill="#fff" stroke="#132f47" stroke-width="${sw/1.5}"/>`; });
+    }
+    if(ref.length){
+      const pts = ref.map(p=>p.join(',')).join(' ');
+      s += ref.length===4 ? `<polygon points="${pts}" fill="rgba(242,193,78,.25)" stroke="#f2c14e" stroke-width="${sw}"/>` : `<polyline points="${pts}" fill="none" stroke="#f2c14e" stroke-width="${sw}"/>`;
+      ref.forEach((p,i)=>{ s += `<g class="pt" data-r="${i}"><circle cx="${p[0]}" cy="${p[1]}" r="${R*1.1}" fill="#f2c14e" stroke="#132f47" stroke-width="${sw/1.5}"/><text x="${p[0]}" y="${p[1]+R*0.45}" text-anchor="middle" font-size="${R*1.25}" font-weight="800" fill="#132f47" pointer-events="none">${i+1}</text></g>`; });
+    }
+    svg.innerHTML = s;
+    result();
+  }
+  function result(){
+    const m = measure(), box = el('pResult');
+    if(m.err){ box.innerHTML = `<small>${esc(m.err)}</small>`; el('pUse').disabled = true; return; }
+    const warn = m.refShare < 0.003 ? '<br><small>The reference is very small compared with the area, so a small slip on its corners makes a big difference. Use a bigger reference if you can, such as a run of several blocks.</small>' : '';
+    box.innerHTML = `<span class="big">${m.area.toFixed(1)} m²</span><small>Measured from the photo using the ${el('pRefL').value} × ${el('pRefW').value} mm reference.</small>${warn}`;
+    el('pUse').disabled = false;
+  }
+  const status = (t, cls) => { const s = el('pStatus'); s.textContent = t||''; s.className = 'note ' + (cls||''); s.hidden = !t; };
+
+  // ---- pointer handling ----
+  function svgPoint(evt){
+    const svg = el('pSvg'); const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return [Math.min(W, Math.max(0, p.x)), Math.min(H, Math.max(0, p.y))];
+  }
+  function onDown(e){
+    const t = e.target.closest('[data-o],[data-r],[data-mid]');
+    if(t && mode==='del'){
+      if(t.dataset.o!=null && outline.length>3){ outline.splice(+t.dataset.o,1); draw(); }
+      else if(t.dataset.o!=null) status('An outline needs at least 3 points. Use Clear to start again.', 'w');
+      return;
+    }
+    if(t && t.dataset.mid!=null){ const i = +t.dataset.mid; outline.splice(i+1, 0, svgPoint(e)); drag = {arr:outline, i:i+1}; }
+    else if(t && t.dataset.o!=null) drag = {arr:outline, i:+t.dataset.o};
+    else if(t && t.dataset.r!=null) drag = {arr:ref, i:+t.dataset.r};
+    else if(mode==='draw'){ outline.push(svgPoint(e)); draw(); return; }
+    else if(mode==='ref'){ ref.push(svgPoint(e)); if(ref.length===4){ setMode(null); status('Reference marked. Drag the numbered corners onto the joints if needed.'); } draw(); return; }
+    if(drag){ e.preventDefault(); el('pSvg').setPointerCapture(e.pointerId); draw(); }
+  }
+  function onMove(e){ if(!drag) return; e.preventDefault(); drag.arr[drag.i] = svgPoint(e); draw(); }
+  function onUp(){ drag = null; }
+
+  function setMode(m){
+    mode = m;
+    el('pDraw').classList.toggle('pri', m==='draw'); el('pDraw').textContent = m==='draw' ? 'Finish outline' : 'Draw by hand';
+    el('pRef').classList.toggle('pri', m==='ref');
+    el('pDel').classList.toggle('pri', m==='del'); el('pDel').textContent = m==='del' ? 'Done deleting' : 'Delete points';
+  }
+
+  // ---- loading a photo ----
+  function load(file){
+    if(!file) return;
+    const fr = new FileReader();
+    fr.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const k = Math.min(1, MAXPX/Math.max(img.width, img.height));
+        W = Math.round(img.width*k); H = Math.round(img.height*k);
+        const c = document.createElement('canvas'); c.width = W; c.height = H;
+        c.getContext('2d').drawImage(img, 0, 0, W, H);
+        const url = c.toDataURL('image/jpeg', 0.85); b64 = url.split(',')[1];
+        el('pImg').src = url; el('pImg').hidden = false; el('pSvg').removeAttribute('hidden'); el('pEmpty').hidden = true;
+        outline = []; ref = []; sugg = null; el('pAiNote').innerHTML = ''; setMode(null);
+        ['pAi','pDraw','pRef','pDel','pClear'].forEach(id=> el(id).disabled = false);
+        draw(); status('Press AI outline, or draw the area and mark a reference yourself.');
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+
+  function setRefSize(L, Wd){
+    el('pRefL').value = Math.round(L); el('pRefW').value = Math.round(Wd);
+    const key = `${Math.round(Math.max(L,Wd))}x${Math.round(Math.min(L,Wd))}`;
+    const opt = [...el('pRefType').options].find(o=>o.value===key);
+    el('pRefType').value = opt ? key : 'custom';
+  }
+
+  async function ai(){
+    if(!b64) return;
+    setMode(null);
+    const btn = el('pAi'); btn.disabled = true; btn.textContent = 'Measuring…';
+    status('Asking AI to outline the area and find a reference. This takes 10–30 seconds.');
+    try{
+      if(!navigator.onLine) throw new Error('You need a connection for AI outlines.');
+      const {data, error} = await sb.functions.invoke((window.PURGO_CONFIG||{}).measureFunction || 'measure', {body:{kind:'photo', image:b64, mediaType:'image/jpeg', w:W, h:H, hint:el('pHint').value.trim()}});
+      if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
+      if(data.error) throw new Error(data.error);
+      if(data.outline && data.outline.length>=3) outline = data.outline;
+      if(data.reference){ ref = data.reference.corners; setRefSize(data.reference.length_mm, data.reference.width_mm); }
+      if(data.label) el('pLabel').value = data.label;
+      sugg = data.suggestions || null;
+      const bits = [];
+      if(sugg){ const nm = {block:'Block paving',concrete:'Concrete',tarmac:'Tarmac',stone:'Natural stone',imprint:'Imprinted concrete',porcelain:'Porcelain',deck:'Decking',gravel:'Gravel',mixed:'Mixed'};
+        if(sugg.surface && sugg.surface!=='unknown') bits.push(`surface: <b>${esc(nm[sugg.surface]||sugg.surface)}</b>`);
+        ['soiling','moss','weeds'].forEach(k=>{ if(sugg[k] && sugg[k]!=='unknown') bits.push(`${k}: <b>${esc(sugg[k])}</b>`); }); }
+      if(data.reference && data.reference.what) bits.push(`reference: <b>${esc(data.reference.what)}</b>`);
+      el('pAiNote').innerHTML = (bits.length || data.notes) ? `<div class="m-ai"><span class="tag">AI</span> ${bits.join(' · ')}${data.notes?`<div class="hint">${esc(data.notes)}</div>`:''}</div>` : '';
+      draw();
+      if(!data.reference) status('AI outlined the area but could not find a reliable reference. Press Mark reference and tap the 4 corners of a block, slab or drain cover.', 'w');
+      else status(`Done (${data.confidence||'unknown'} confidence). Check the yellow corners sit exactly on the joints and the blue outline follows the edges.`, data.confidence==='low' ? 'w' : '');
+    }catch(e){ status('AI outline failed: ' + (e.message||e), 'b'); }
+    btn.disabled = false; btn.textContent = 'AI outline';
+  }
+
+  function use(){
+    const m = measure(); if(m.err) return;
+    const surf = sugg && ['block','concrete','tarmac','stone','imprint','porcelain','deck'].includes(sugg.surface) ? sugg.surface : 'block';
+    const soil = sugg && ['light','normal','heavy'].includes(sugg.soiling) ? sugg.soiling : 'normal';
+    pwRows = pwRows.filter(r=>+r.sqm>0);
+    pwRows.push({name: el('pLabel').value.trim() || 'Driveway', surf, sqm: Math.round(m.area), soil, sand: surf==='block', chem:''});
+    if(sugg && sugg.weeds==='heavy' && $('cx_weeds')) $('cx_weeds').checked = true;
+    $('on-pw').checked = true; renderPw(); syncSvc(); show('quote'); render();
+    flash(`Added ${Math.round(m.area)} m² from the photo`);
+  }
+
+  function bind(){
+    el('pCam').addEventListener('change', e=> load(e.target.files[0]));
+    el('pFile').addEventListener('change', e=> load(e.target.files[0]));
+    const svg = el('pSvg');
+    svg.addEventListener('pointerdown', onDown); svg.addEventListener('pointermove', onMove);
+    svg.addEventListener('pointerup', onUp); svg.addEventListener('pointercancel', onUp);
+    el('pAi').onclick = ai;
+    el('pDraw').onclick = ()=>{ if(mode==='draw'){ setMode(null); status(''); } else { outline = []; setMode('draw'); draw(); status('Tap each corner of the area in turn, then press Finish outline.'); } };
+    el('pRef').onclick = ()=>{ ref = []; setMode('ref'); draw(); status('Tap the 4 corners of the reference in order around it. Side 1→2 is the length you enter on the right.'); };
+    el('pDel').onclick = ()=>{ setMode(mode==='del' ? null : 'del'); status(mode==='del' ? 'Tap a white dot to remove it.' : ''); };
+    el('pClear').onclick = ()=>{ outline = []; ref = []; setMode(null); draw(); status(''); };
+    el('pRefType').addEventListener('change', ()=>{ const v = el('pRefType').value; if(v!=='custom'){ const [a,b] = v.split('x'); el('pRefL').value = a; el('pRefW').value = b; } draw(); });
+    ['pRefL','pRefW'].forEach(id=> el(id).addEventListener('input', ()=>{ el('pRefType').value = 'custom'; result(); }));
+    el('pSwap').onclick = ()=>{ const a = el('pRefL').value; el('pRefL').value = el('pRefW').value; el('pRefW').value = a; result(); };
+    el('pUse').onclick = use;
+    document.querySelectorAll('#mSrc button').forEach(b=> b.onclick = ()=>{
+      const photo = b.dataset.s==='photo';
+      document.querySelectorAll('#mSrc button').forEach(x=>x.classList.toggle('on', x===b));
+      el('mMapMode').hidden = photo; el('mPhotoMode').hidden = !photo; el('mUse').hidden = photo;
+      document.querySelector('#view-measure .sub').textContent = photo ? 'Take or choose a photo of the drive or patio, then press AI outline. Check the yellow reference corners sit on the joints and the blue outline follows the edges.' : "Put the cross on the customer's house, choose the property type, then press AI outline. Drag the dots to correct it; the figures update as you go.";
+    });
+  }
+  bind();
+  return {measure};
+})();

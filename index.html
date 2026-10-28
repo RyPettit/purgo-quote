@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=e38fd1b442">
+<link rel="stylesheet" href="purgo.css?v=e6f786fe66">
 </head>
 <body>
 <header class="topbar">
@@ -264,7 +264,8 @@
 <main id="view-measure" class="wrap" hidden>
   <div class="viewbar"><div><h2 class="vtitle">Measure <span class="tag">Test</span></h2><p class="sub">Put the cross on the customer's house, choose the property type, then press AI outline. Drag the dots to correct it; the figures update as you go.</p></div>
     <div class="vb-actions"><button class="btn" type="button" id="mBack">Back to quote</button><button class="btn pri" type="button" id="mUse" disabled>Use</button></div></div>
-  <div class="m-grid">
+  <div class="m-src"><div class="seg" id="mSrc"><button type="button" data-s="map" class="on">Satellite</button><button type="button" data-s="photo">Photo</button></div></div>
+  <div class="m-grid" id="mMapMode">
     <section class="card m-mapcard">
       <div class="m-bar">
         <div class="seg" id="mKind"><button type="button" data-k="patio" class="on">Drive / patio</button><button type="button" data-k="roof">Roof</button><button type="button" data-k="gutters">Gutters</button></div>
@@ -285,6 +286,52 @@
       <h2>Measurements</h2>
       <div id="mList" class="svc-body"></div>
       <p class="hint">Blue outlines are the AI's, yellow ones you drew. Drag a white dot to move a corner; drag a faint mid-point dot to add a corner. Roof area allows for pitch: pick the pitch from a street view or photo.</p>
+    </section>
+  </div>
+
+  <div class="m-grid" id="mPhotoMode" hidden>
+    <section class="card">
+      <div class="m-bar">
+        <label class="btn pri p-pick">Take photo<input type="file" id="pCam" accept="image/*" capture="environment" hidden></label>
+        <label class="btn p-pick">Choose photo<input type="file" id="pFile" accept="image/*" hidden></label>
+        <label class="f m-addr">Note for the AI (optional)<input id="pHint" placeholder="e.g. front drive only, ignore the neighbour's side"></label>
+      </div>
+      <div class="p-stage" id="pStage">
+        <img id="pImg" alt="Photo being measured" hidden>
+        <svg id="pSvg" hidden></svg>
+        <div class="p-empty" id="pEmpty"><b>Take or choose a photo of the drive or patio.</b><br>Best from a slight height (an upstairs window or the van step), with the whole area in shot and the paving pattern visible.</div>
+      </div>
+      <div class="m-tools">
+        <button class="btn pri" type="button" id="pAi" disabled>AI outline</button>
+        <button class="btn" type="button" id="pDraw" disabled>Draw by hand</button>
+        <button class="btn" type="button" id="pRef" disabled>Mark reference</button>
+        <button class="btn" type="button" id="pDel" disabled>Delete points</button>
+        <button class="btn" type="button" id="pClear" disabled>Clear</button>
+      </div>
+      <p class="note" id="pStatus" hidden></p>
+    </section>
+    <section class="card">
+      <h2>Photo measurement</h2>
+      <div class="svc-body">
+        <div id="pAiNote"></div>
+        <div class="fields">
+          <label class="f wide">Reference (yellow box)<select id="pRefType">
+            <option value="200x100">Block paver 200 × 100 mm</option>
+            <option value="600x600">Slab 600 × 600 mm</option>
+            <option value="900x600">Slab 900 × 600 mm</option>
+            <option value="450x450">Slab or drain cover 450 × 450 mm</option>
+            <option value="600x300">Slab 600 × 300 mm</option>
+            <option value="custom">Custom size</option>
+          </select></label>
+          <label class="f">Side 1→2 (mm)<input id="pRefL" type="number" min="10" value="200"></label>
+          <label class="f">Side 2→3 (mm)<input id="pRefW" type="number" min="10" value="100"></label>
+        </div>
+        <div style="margin-top:8px"><button class="btn sm" type="button" id="pSwap">Swap sides</button></div>
+        <div class="p-result" id="pResult"></div>
+        <label class="f" style="margin-top:12px">Name<input id="pLabel" value="Driveway"></label>
+        <div style="margin-top:12px"><button class="btn pri" type="button" id="pUse" disabled>Add to pressure washing</button></div>
+      </div>
+      <p class="hint">The yellow box is something of known size lying flat on the drive. The bigger it is, the more accurate the answer: a run of several whole blocks beats one block. Drag its numbered corners exactly onto the joints. Blue is the area being measured.</p>
     </section>
   </div>
 </main>
@@ -328,6 +375,6 @@
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
 <script src="purgo.js?v=9fe509f694"></script>
-<script src="measure.js?v=e1c35ce6f8"></script>
+<script src="measure.js?v=fdc0a416dc"></script>
 </body>
 </html>

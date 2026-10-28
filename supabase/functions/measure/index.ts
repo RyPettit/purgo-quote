@@ -117,6 +117,69 @@ const TOOL = {
   },
 };
 
+// ---------- photos of a drive or patio (no map; the paving is the ruler) ----------
+function photoPrompt(w: number, h: number, hint: string) {
+  return `You are helping measure a driveway or patio for an exterior cleaning quote in the UK, from a photo.
+The photo is ${w} x ${h} pixels. Pixel (0,0) is the top-left corner. All coordinates you give must be in these pixels.
+${hint ? `The user says: "${hint.slice(0, 200)}"\n` : ""}
+1. OUTLINE: outline the main driveway / patio / paved area in the photo as one closed polygon, following where the paving physically ends (walls, kerbs, edging, lawn and bed edges, house wall). Include the surface under parked cars. Exclude the public pavement, road, lawns, beds and anything clearly belonging to a neighbour. If part of the drive runs out of shot, follow the photo edge and say so in notes.
+2. REFERENCE: find a rectangle on the ground whose real size you know, to give the photo its scale. Prefer the LARGEST rectangle you can count exactly, near the middle or front of the paved area:
+   - block paving: standard blocks are 200 x 100 mm. Pick a rectangle made of whole blocks you can count (for example 4 blocks along the 200 mm side by 4 blocks along the 100 mm side in stretcher bond = 800 x 400 mm). Avoid herringbone areas if a straight course is visible; otherwise use one clear whole block.
+   - slabs: common sizes are 600 x 600, 600 x 900, 450 x 450 and 600 x 300 mm. Use one or several whole slabs.
+   - other: a manhole or drain cover (usually 450 x 450 or 600 x 450 mm).
+   Give its 4 corners IN ORDER around the rectangle (corner 1 to 2 is the length, 2 to 3 the width), and its real length and width in mm. Put the corners exactly on the joints.
+   If no reliable reference is visible, return no reference and say so in notes.
+3. Read the surface type, soiling, moss and weeds as best you can, using "unknown" when you cannot tell.
+Return your answer only by calling the report_photo tool.`;
+}
+
+const PHOTO_TOOL = {
+  name: "report_photo",
+  description: "Report the outline, the reference rectangle and the condition seen in the photo.",
+  input_schema: {
+    type: "object",
+    properties: {
+      label: { type: "string" },
+      outline: { type: "array", items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } },
+      reference: {
+        type: "object",
+        properties: {
+          corners: { type: "array", items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 }, minItems: 4, maxItems: 4 },
+          length_mm: { type: "number" },
+          width_mm: { type: "number" },
+          what: { type: "string" },
+        },
+      },
+      surface: { type: "string", enum: ["block", "concrete", "tarmac", "stone", "imprint", "porcelain", "deck", "gravel", "mixed", "unknown"] },
+      soiling: { type: "string", enum: ["light", "normal", "heavy", "unknown"] },
+      moss: { type: "string", enum: ["none", "light", "moderate", "heavy", "unknown"] },
+      weeds: { type: "string", enum: ["none", "light", "moderate", "heavy", "unknown"] },
+      confidence: { type: "string", enum: ["low", "medium", "high"] },
+      notes: { type: "string" },
+    },
+    required: ["outline", "confidence", "notes"],
+  },
+};
+
+async function askClaude(akey: string, tool: any, content: any[]) {
+  const ai = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": akey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({
+      model: Deno.env.get("PURGO_MEASURE_MODEL") || "claude-sonnet-5-5",
+      max_tokens: 2000, tools: [tool], tool_choice: { type: "auto" },
+      messages: [{ role: "user", content }],
+    }),
+  });
+  if (!ai.ok) throw new Error(`AI request failed (${ai.status}): ${(await ai.text()).slice(0, 300)}`);
+  const out = await ai.json();
+  const use = (out.content ?? []).find((c: any) => c.type === "tool_use");
+  if (use?.input) return use.input;
+  const text = (out.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
+  const m = text.match(/\{[\s\S]*\}/);
+  try { return m ? JSON.parse(m[0]) : null; } catch { return null; }
+}
+
 function toBase64(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf); let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -157,7 +220,30 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
   try {
     const denied = await checkUser(req);
     if (denied) return reply({ error: denied }, 401);
-    const { lat, lng, zoom, kind, property } = await req.json();
+    const body = await req.json();
+    const { lat, lng, zoom, kind, property } = body;
+    if (kind === "photo") {
+      const akey = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!akey) return reply({ error: "The AI key is not set up yet (ANTHROPIC_API_KEY)." }, 503);
+      const { image, mediaType, w, h, hint } = body;
+      if (typeof image !== "string" || image.length < 100 || !(w > 0) || !(h > 0)) return reply({ error: "No photo received." }, 400);
+      if (image.length > 7_000_000) return reply({ error: "That photo is too large. Try a smaller one." }, 413);
+      const r = await askClaude(akey, PHOTO_TOOL, [
+        { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: image } },
+        { type: "text", text: photoPrompt(w, h, String(hint || "")) },
+      ]);
+      if (!r) return reply({ error: "The AI did not return an outline." }, 502);
+      const clip = (p: any) => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]) ? [Math.min(w, Math.max(0, p[0])), Math.min(h, Math.max(0, p[1]))] : null;
+      const outline = (r.outline ?? []).map(clip).filter(Boolean);
+      const ref = r.reference && Array.isArray(r.reference.corners) && r.reference.corners.length === 4 && r.reference.length_mm > 0 && r.reference.width_mm > 0
+        ? { corners: r.reference.corners.map(clip), length_mm: r.reference.length_mm, width_mm: r.reference.width_mm, what: String(r.reference.what || "") } : null;
+      return reply({
+        label: String(r.label || "Driveway").slice(0, 60), outline: outline.length >= 3 ? outline : [],
+        reference: ref && ref.corners.every(Boolean) ? ref : null,
+        suggestions: { surface: r.surface, soiling: r.soiling, moss: r.moss, weeds: r.weeds },
+        confidence: r.confidence, notes: r.notes,
+      });
+    }
     if (![lat, lng, zoom].every((v) => typeof v === "number" && isFinite(v))) return reply({ error: "Missing map position." }, 400);
     if (!["patio", "roof", "gutters"].includes(kind)) return reply({ error: "Unknown measurement type." }, 400);
     const z = Math.max(17, Math.min(21, Math.round(zoom)));
