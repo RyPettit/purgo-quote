@@ -117,7 +117,7 @@ const MEASURE = (()=>{
         ${s.kind==='roof' ? `<select class="m-pitch" data-sid="${s.id}" aria-label="Roof pitch">${PITCH.map(p=>`<option value="${p.v}" ${p.v===s.pitch?'selected':''}>${p.label}</option>`).join('')}</select>` : '<span></span>'}
         <button class="btn sm" type="button" data-mdel="${s.id}">Delete</button>
       </div>`;
-    }).join('') : `<p class="hint">Nothing measured yet. Centre the property under the cross, then press <b>AI outline</b> or <b>Draw by hand</b>.</p>`;
+    }).join('') : `<p class="hint">Nothing measured yet. ${kind==='patio' ? 'Put the cross on the drive or patio you want measured' : 'Put the cross on the customer\'s house'}, then press <b>AI outline</b> or <b>Draw by hand</b>.</p>`;
     const tot = mine.reduce((t,s)=>t+shownValue(s).n,0);
     if(mine.length) html += `<div class="m-total">Total <b>${kind==='gutters' ? tot.toFixed(1)+' m' : tot.toFixed(1)+' m²'}</b></div>`;
     box.innerHTML = html;
@@ -134,18 +134,18 @@ const MEASURE = (()=>{
   async function aiOutline(){
     stopDraw();
     const btn = el('mAi'); btn.disabled = true; btn.textContent = 'Measuring…';
-    status('Asking AI to outline the ' + KIND_LABEL[kind].toLowerCase() + ' of the ' + el('mProp').selectedOptions[0].text.toLowerCase() + ' property under the cross. This takes 10–30 seconds.', '');
+    status(kind==='patio' ? 'Asking AI to outline the drive or patio under the cross. This takes 10–30 seconds.' : 'Asking AI to outline the ' + KIND_LABEL[kind].toLowerCase() + ' of the ' + el('mProp').selectedOptions[0].text.toLowerCase() + ' property under the cross. This takes 10–30 seconds.', '');
     try{
       if(!navigator.onLine) throw new Error('You need a connection for AI outlines.');
       const c = gmap.getCenter();
       const {data, error} = await sb.functions.invoke((window.PURGO_CONFIG||{}).measureFunction || 'measure', {body:{lat:c.lat(), lng:c.lng(), zoom:gmap.getZoom(), kind, property:el('mProp').value}});
       if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
       if(data.error) throw new Error(data.error);
-      shapes.filter(s=>s.kind===kind && s.source==='ai').forEach(s=>removeShape(s.id));
+      if(kind!=='patio') shapes.filter(s=>s.kind===kind && s.source==='ai').forEach(s=>removeShape(s.id));
       (data.shapes||[]).forEach(sh=> addShape({label:sh.label, type: kind==='gutters' ? 'line' : sh.type, path: sh.points.map(p=>({lat:p[0], lng:p[1]})), source:'ai', pitch: kind==='roof' ? guessPitch(data.suggestions) : null}));
       suggestions = data.suggestions || null; lastNotes = data.notes || '';
       if(!(data.shapes||[]).length) status('The AI could not find it. Move the map so the property is under the cross, zoom in, and try again, or draw it by hand.', 'w');
-      else status(`AI outline added (${data.confidence||'unknown'} confidence). Drag the white dots to correct it.`, data.confidence==='low' ? 'w' : '');
+      else status(`AI outline added (${data.confidence||'unknown'} confidence). Drag the white dots to correct it.${kind==='patio' ? ' To add another area, move the cross onto it and press AI outline again.' : ''}`, data.confidence==='low' ? 'w' : '');
       list();
     }catch(e){ status('AI outline failed: ' + (e.message||e), 'b'); }
     btn.disabled = false; btn.textContent = 'AI outline';

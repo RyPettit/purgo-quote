@@ -43,9 +43,11 @@ export function metresPerPixel(lat: number, zoom: number, scale = SCALE) {
 }
 
 const TASK: Record<Kind, string> = {
-  patio: `Outline the hard-standing surfaces belonging to the TARGET property: driveway, paths, patios and paved yards (block paving, concrete, tarmac, stone, gravel).
-Draw one closed polygon per separate area (e.g. "Front driveway", "Rear patio", "Side path").
-Include the surface under parked cars. Exclude lawns, flower beds, buildings, roofs, conservatories, the public pavement and road, and anything belonging to neighbours.`,
+  patio: `The red marker sits ON the hard surface to be measured (a driveway, path, patio or paved yard).
+Outline that ONE continuous hard surface as a single closed polygon, and label it (e.g. "Front driveway", "Rear patio").
+Follow where the paving physically ends: walls, kerbs, edging, lawn and flower-bed edges, the house wall, the boundary with the pavement or the neighbour's drive.
+Include the surface under parked cars. Exclude lawns, beds, buildings, roofs, conservatories, the public pavement and road, and anything belonging to neighbours.
+Do not outline other separate areas; the user will measure those separately.`,
   roof: `Outline the ROOF of the TARGET building as one closed polygon following the outer edge of the eaves (the full roof footprint as seen from above).
 For a semi-detached or terraced house include ONLY the target property's share of the roof, splitting at the party wall line.
 Draw separate polygons for clearly separate roofs on the same property (e.g. "Main roof", "Rear extension", "Garage") and label them. Do not include neighbours' roofs.`,
@@ -72,6 +74,11 @@ ${PROPERTY[property] ?? ""}
 
 Task:
 ${TASK[kind]}
+
+Shadows:
+- In the UK the sun is to the south, so buildings and trees cast dark shadows towards the north (the top of the image) and slightly east or west.
+- A shadow is NOT an edge. Never trace the outline of a shadow. Follow the physical edge of the surface or roof straight through any shadow, using the lines you can see either side of it (walls, kerbs, block borders, gutters, ridge lines) and the shape of the building.
+- Dark, shadowed parts of a drive or roof are still part of it.
 
 Rules:
 - Give corner points in pixel coordinates, in order around the shape. Use as few points as describe the shape accurately (usually 4 to 12). Put points exactly on the visible edges.
