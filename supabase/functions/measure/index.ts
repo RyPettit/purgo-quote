@@ -158,7 +158,7 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
         model: Deno.env.get("PURGO_MEASURE_MODEL") || "claude-sonnet-5-5",
         max_tokens: 2000,
         tools: [TOOL],
-        tool_choice: { type: "tool", name: "report_outline" },
+        tool_choice: { type: "auto" },
         messages: [{ role: "user", content: [
           { type: "image", source: { type: "base64", media_type: mediaType, data } },
           { type: "text", text: prompt(kind as Kind, metresPerPixel(lat, z)) },
@@ -168,8 +168,13 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
     if (!ai.ok) return reply({ error: `AI request failed (${ai.status}): ${(await ai.text()).slice(0, 300)}` }, 502);
     const out = await ai.json();
     const use = (out.content ?? []).find((c: any) => c.type === "tool_use");
-    if (!use) return reply({ error: "The AI did not return an outline." }, 502);
-    const r = use.input;
+    let r = use?.input;
+    if (!r) { // fall back to JSON written as text
+      const text = (out.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
+      const m = text.match(/\{[\s\S]*\}/);
+      try { r = m ? JSON.parse(m[0]) : null; } catch { r = null; }
+    }
+    if (!r) return reply({ error: "The AI did not return an outline." }, 502);
     return reply({
       shapes: toShapes(r, lat, lng, z),
       suggestions: { surface: r.surface, soiling: r.soiling, moss: r.moss, roof_covering: r.roof_covering },
