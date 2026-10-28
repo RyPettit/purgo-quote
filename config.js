@@ -3,7 +3,7 @@
 window.PURGO_CONFIG = {
   url: 'https://iixqkqkmdholetujuqin.supabase.co',
   key: 'sb_publishable_zfndNRZtMBkaP85UDpX6Bg_dgHXXY5Y',
-  googleMapsKey: ''   // browser key restricted to this site (Maps JavaScript API + Geocoding API)
+  googleMapsKey: 'AIzaSyA8dEa4D-beDLkn3oM0Yg1w-DaFRKkFrrk'   // browser key restricted to this site (Maps JavaScript API + Geocoding API)
 };
 // Test features (Measure) only appear on the dev site and on this computer
 window.PURGO_DEV = /^dev\./.test(location.hostname) || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
