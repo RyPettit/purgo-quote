@@ -76,7 +76,13 @@ let addresses = [], quotes = [], staff = [];
 let fuel = {diesel:1.992, petrol:1.741, date:'2026-10-26', source:'starting price'};
 function showFuel(){
   if(!fuel || !fuel.date) return;
-  $('fuelSrc').textContent = `Last set ${new Date(fuel.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})} (${fuel.source||'admin'}). Changing either price stamps today's date when you save.`;
+  const d = new Date(fuel.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const st = fuel.status;
+  let t = fuel.auto ? `Updated automatically each morning: ${d}, ${fuel.source}. Anything you type here is replaced at the next morning update.`
+                    : `Last set ${d} (${fuel.source||'admin'}). Updates automatically each morning once the daily fuel job is running.`;
+  if(st && st.ok===false) t += ` Last automatic update failed (${new Date(st.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}): ${st.message}`;
+  $('fuelSrc').textContent = t;
+  $('fuelSrc').className = (st && st.ok===false) ? 'note w' : 'hint';
 }
 
 /* suggestion dropdowns */
@@ -691,7 +697,7 @@ $('saveRates').onclick = async ()=>{
     const d = num('diesel'), p = num('petrol');
     if(d!==fuel.diesel || p!==fuel.petrol){
       fuel = {diesel:d, petrol:p, date:new Date().toISOString().slice(0,10), source:'set by '+ME.name};
-      r = await sb.from('settings').upsert({key:'fuel', value:fuel, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
+      r = await sb.from('settings').upsert({key:'fuel', value:{diesel:d, petrol:p, date:fuel.date, source:fuel.source}, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
     }
     if(R.chems.length){
       r = await sb.from('chemicals').upsert(R.chems.map((c,i)=>({id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, sort:i, active:true}))); if(r.error) throw r.error;

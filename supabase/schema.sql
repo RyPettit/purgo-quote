@@ -186,7 +186,7 @@ begin
   select value into r from settings where key = 'rates';
   r := coalesce(r, '{}'::jsonb);
   if public.is_admin() then
-    select value into f from settings where key = 'fuel';
+    select value || jsonb_build_object('status', (select value from settings where key = 'fuel_status')) into f from settings where key = 'fuel';
     select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'cost', cost, 'cover', cover, 'markup', markup) order by sort, name), '[]'::jsonb)
       into ch from chemicals where active;
     return jsonb_build_object('role', 'admin', 'rates', r, 'chems', ch, 'fuel', f);
