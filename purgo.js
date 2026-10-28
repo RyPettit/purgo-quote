@@ -181,7 +181,7 @@ function renderPw(){
   $('pwRows').innerHTML = pwRows.map((r,i)=>`<div class="arow">
     <label class="f">Area<input id="pw_n_${i}" data-i="${i}" data-f="name" value="${esc(r.name)}"></label>
     <label class="f">Surface<select id="pw_s_${i}" data-i="${i}" data-f="surf">${Object.entries(SURF).map(([k,v])=>`<option value="${k}" ${k===r.surf?'selected':''}>${v[0]}</option>`).join('')}</select></label>
-    <label class="f">Size (m²)<input id="pw_q_${i}" type="number" min="0" data-i="${i}" data-f="sqm" value="${r.sqm}"></label>
+    <label class="f">Size (m²)<span class="inrow"><input id="pw_q_${i}" type="number" min="0" data-i="${i}" data-f="sqm" value="${r.sqm}"><button class="btn sm dev-only" type="button" data-measure="pw:${i}">Measure</button></span></label>
     <label class="f">Soiling<select id="pw_o_${i}" data-i="${i}" data-f="soil">${['light','normal','heavy'].map(v=>`<option value="${v}" ${v===r.soil?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></label>
     <label class="f">Chemical<select id="pw_c_${i}" data-i="${i}" data-f="chem">${chemOptions(r.chem)}</select></label>
     <label class="ck" style="align-self:center"><input type="checkbox" id="pw_d_${i}" data-i="${i}" data-f="sand" ${r.sand?'checked':''}>Re-sand joints</label>
@@ -450,7 +450,7 @@ function fmtH(h){ const m = Math.round(h*60); return `${Math.floor(m/60)}:${Stri
 
 /* ---------- output ---------- */
 let refStr = '';
-function makeRef(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); refStr = `PQ-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${initials()}`; editing = null; syncEditing(); }
+function makeRef(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); refStr = `${window.PURGO_DEV?'DEV-':''}PQ-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${initials()}`; editing = null; syncEditing(); }
 function initials(){ const n = (ME && ME.name) || 'X'; return n.split(/[\s._-]+/).filter(Boolean).map(w=>w[0]).join('').slice(0,3).toUpperCase() || 'X'; }
 let last = null;
 function render(){
@@ -551,13 +551,16 @@ const FORM_SKIP = /^(r_|ch_|pw_)/;
 function snapshot(){
   const f = {};
   document.querySelectorAll('.col input[id], .col select[id]').forEach(el=>{ if(FORM_SKIP.test(el.id)) return; f[el.id] = el.type==='checkbox' ? el.checked : el.value; });
-  return {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), ctype};
+  const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), ctype};
+  if(window.PURGO_DEV && typeof MEASURE!=='undefined'){ const m = MEASURE.snapshot(); if(m.length) out.measures = m; }
+  return out;
 }
 function restore(s){
   ctype = s.ctype||'res';
   document.querySelectorAll('#ctype button').forEach(x=>x.classList.toggle('on', x.dataset.v===ctype));
   $('comBox').hidden = ctype!=='com';
   pwRows = s.pwRows||[];
+  if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
   renderPw();
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
@@ -612,6 +615,7 @@ $('newJob').onclick = ()=>{
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chem:''}];
   loc = null; makeRef(); renderPw(); render();
+  if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore([]);
 };
 
 
@@ -628,7 +632,7 @@ const LS = {
 };
 let editing = null; // {id, ref} of the saved quote currently open
 const round2 = n => Math.round((+n||0)*100)/100;
-const VIEWS = ['login','quote','quotes','admin'];
+const VIEWS = ['login','quote','quotes','admin','measure'];
 const isNetErr = e => !navigator.onLine || /fetch|network|Failed to fetch|Load failed/i.test(String(e && (e.message||e)));
 
 function syncEditing(){
@@ -637,6 +641,7 @@ function syncEditing(){
 }
 function show(view){
   if(view==='admin' && ROLE!=='admin') view = 'quote';
+  if(view==='measure' && !window.PURGO_DEV) view = 'quote';
   if(!ME && view!=='login') view = 'login';
   VIEWS.forEach(v=> $('view-'+v).hidden = v!==view);
   document.querySelectorAll('.nav button[data-view]').forEach(b=>b.classList.toggle('on', b.dataset.view===view));

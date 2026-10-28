@@ -198,3 +198,30 @@ label.f{justify-content:space-between}
 
 /* customer quote preview: always shown as it will look on paper */
 .qpreview{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;color-scheme:light}
+
+/* dev-only features */
+html:not(.is-dev) .dev-only{display:none!important}
+.devbadge{font-size:.62rem;font-weight:800;letter-spacing:.14em;background:#f2c14e;color:#132f47;border-radius:4px;padding:2px 6px;margin-left:4px;align-self:center}
+.inrow{display:flex;gap:6px;align-items:center}
+.inrow input{flex:1 1 auto;min-width:0}
+.inrow .btn{flex:0 0 auto}
+/* measure */
+.m-grid{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:980px){.m-grid{grid-template-columns:minmax(0,1fr) 380px;align-items:start}}
+.m-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px}
+.m-addr{flex:1 1 260px}
+.m-mapwrap{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+#mMap{width:100%;height:min(62vh,640px);min-height:340px;background:#0d2236}
+.m-cross{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;pointer-events:none}
+.m-cross::before,.m-cross::after{content:"";position:absolute;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.m-cross::before{left:16px;top:0;width:2px;height:34px}
+.m-cross::after{top:16px;left:0;height:2px;width:34px}
+.m-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.m-row{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:6px 10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.m-row .m-sw{width:14px;height:14px;border-radius:4px}
+.m-row .m-val{text-align:right}
+.m-row .m-val small{display:block;color:var(--muted);font-size:.75rem}
+.m-row select,.m-row .btn{grid-column:2 / -1}
+.m-row .btn{justify-self:start}
+.m-total{display:flex;justify-content:space-between;padding-top:10px;font-size:1.05rem}
+.m-ai{background:var(--soft);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:.88rem}

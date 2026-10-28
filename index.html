@@ -13,15 +13,16 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=19a47e8d35">
+<link rel="stylesheet" href="purgo.css?v=0711ec938f">
 </head>
 <body>
 <header class="topbar">
   <div class="tb-in">
-    <a class="brand" href="#quote" aria-label="Purgō Quote"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"></a>
+    <a class="brand" href="#quote" aria-label="Purgō Quote"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"><span class="devbadge dev-only">DEV</span></a>
     <nav class="nav" id="nav" hidden>
       <button type="button" data-view="quote">Quote</button>
       <button type="button" data-view="quotes">Saved quotes</button>
+      <button type="button" data-view="measure" class="dev-only">Measure</button>
       <button type="button" data-view="admin" class="admin-only">Admin</button>
     </nav>
     <div class="tb-user" id="tbUser" hidden>
@@ -119,7 +120,7 @@
         <div class="svc-body">
           <div class="fields">
             <label class="f">Workers<input id="wGt" type="number" min="1" max="6" placeholder="whole crew"></label>
-            <label class="f">Gutter length (m)<input id="gtM" type="number" min="0" step="1" value="0"></label>
+            <label class="f">Gutter length (m)<span class="inrow"><input id="gtM" type="number" min="0" step="1" value="0"><button class="btn sm dev-only" type="button" data-measure="gt">Measure</button></span></label>
             <label class="f">Storeys<select id="gtSt"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4+</option></select></label>
             <label class="f">Downpipe guards (qty)<input id="gtGuard" type="number" min="0" value="0"></label>
             <label class="f">Fascia &amp; soffit clean (m)<input id="gtFas" type="number" min="0" value="0"></label>
@@ -160,7 +161,7 @@
         <div class="svc-body">
           <div class="fields">
             <label class="f">Workers<input id="wRf" type="number" min="1" max="6" placeholder="whole crew"></label>
-            <label class="f">Roof area (m²)<input id="rfA" type="number" min="0" value="70"></label>
+            <label class="f">Roof area (m²)<span class="inrow"><input id="rfA" type="number" min="0" value="70"><button class="btn sm dev-only" type="button" data-measure="rf">Measure</button></span></label>
             <label class="f">Method<select id="rfM"><option value="scrape">Scrape &amp; moss removal</option><option value="lpw">Low pressure wash</option><option value="both">Scrape + low pressure wash</option></select></label>
             <label class="f">Roof covering<select id="rfT"><option value="concrete">Concrete tile</option><option value="clay">Clay tile</option><option value="slate">Slate</option><option value="flat">Flat / felt / EPDM</option><option value="other">Other</option></select></label>
             <label class="f">Pitch<select id="rfP"><option value="low">Low</option><option value="std" selected>Standard</option><option value="steep">Steep</option></select></label>
@@ -259,6 +260,33 @@
   </section>
 </main>
 
+<!-- MEASURE (dev) -->
+<main id="view-measure" class="wrap" hidden>
+  <div class="viewbar"><div><h2 class="vtitle">Measure <span class="tag">Test</span></h2><p class="sub">AI draws the outline on the satellite view. Drag the dots to correct it; the figures update as you go.</p></div>
+    <div class="vb-actions"><button class="btn" type="button" id="mBack">Back to quote</button><button class="btn pri" type="button" id="mUse" disabled>Use</button></div></div>
+  <div class="m-grid">
+    <section class="card m-mapcard">
+      <div class="m-bar">
+        <div class="seg" id="mKind"><button type="button" data-k="patio" class="on">Drive / patio</button><button type="button" data-k="roof">Roof</button><button type="button" data-k="gutters">Gutters</button></div>
+        <label class="f m-addr">Address<span class="inrow"><input id="mAddr" placeholder="House number, street, postcode"><button class="btn sm" type="button" id="mFind">Find</button></span></label>
+      </div>
+      <div class="m-mapwrap"><div id="mMap"></div><div class="m-cross" aria-hidden="true"></div></div>
+      <div class="m-tools">
+        <button class="btn pri" type="button" id="mAi">AI outline</button>
+        <button class="btn" type="button" id="mDraw">Draw by hand</button>
+        <button class="btn" type="button" id="mDelPts">Delete points</button>
+        <button class="btn" type="button" id="mClear">Clear</button>
+      </div>
+      <p class="note" id="mStatus" hidden></p>
+    </section>
+    <section class="card">
+      <h2>Measurements</h2>
+      <div id="mList" class="svc-body"></div>
+      <p class="hint">Blue outlines are the AI's, yellow ones you drew. Drag a white dot to move a corner; drag a faint mid-point dot to add a corner. Roof area allows for pitch: pick the pitch from a street view or photo.</p>
+    </section>
+  </div>
+</main>
+
 <!-- ADMIN -->
 <main id="view-admin" class="wrap" hidden>
   <div class="viewbar"><div><h2 class="vtitle">Admin</h2><p class="sub">Only you can see and change this page. Staff quote from these prices but never see costs, labour pay, markups or fuel. Press Save price list to apply changes.</p></div>
@@ -297,6 +325,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=7fbdb9364d"></script>
+<script src="purgo.js?v=51384a5a59"></script>
+<script src="measure.js?v=c136250162"></script>
 </body>
 </html>
