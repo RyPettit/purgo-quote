@@ -138,7 +138,7 @@ const MEASURE = (()=>{
     try{
       if(!navigator.onLine) throw new Error('You need a connection for AI outlines.');
       const c = gmap.getCenter();
-      const {data, error} = await sb.functions.invoke('measure', {body:{lat:c.lat(), lng:c.lng(), zoom:gmap.getZoom(), kind}});
+      const {data, error} = await sb.functions.invoke((window.PURGO_CONFIG||{}).measureFunction || 'measure', {body:{lat:c.lat(), lng:c.lng(), zoom:gmap.getZoom(), kind}});
       if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
       if(data.error) throw new Error(data.error);
       shapes.filter(s=>s.kind===kind && s.source==='ai').forEach(s=>removeShape(s.id));
