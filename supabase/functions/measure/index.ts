@@ -54,10 +54,21 @@ Draw each continuous gutter run as an open line (type "line") and label it (e.g.
 For a semi-detached or terraced house include only the target property's share. Do not include neighbours.`,
 };
 
-function prompt(kind: Kind, mpp: number) {
+const PROPERTY: Record<string, string> = {
+  detached: "The target is a DETACHED house: a building standing on its own. Outline the whole of it.",
+  semi: `The target is ONE HALF of a SEMI-DETACHED pair: two houses joined by a shared party wall, usually under what looks like one continuous roof.
+Outline ONLY the half containing the red marker. The party wall normally runs front-to-back through the middle of the pair, at right angles to the street, often in line with the chimney stack between the two houses.
+Split the roof (and gutters) along that line. The other half belongs to the neighbour and must not be included. As a sanity check, a semi-detached half is usually 35 to 80 m² of roof footprint.`,
+  end: `The target is an END-OF-TERRACE house: the last house in a row. Outline ONLY the house containing the red marker, from the free end wall to the first party wall. Do not include the rest of the terrace.`,
+  mid: `The target is a MID-TERRACE house: a narrow house with neighbours joined on both sides. Outline ONLY the house containing the red marker, between its two party walls (usually 4 to 6 metres wide along the street). Do not include neighbours.`,
+  commercial: "The target is a commercial or non-standard building. Outline the building or area containing the red marker.",
+};
+
+function prompt(kind: Kind, mpp: number, property: string) {
   return `You are measuring a property for an exterior cleaning quote in the UK.
 The image is a top-down satellite view, ${PX} x ${PX} pixels, north up. Pixel (0,0) is the top-left corner and (${PX},${PX}) the bottom-right.
-The TARGET property is the one at or nearest the centre of the image (pixel ${PX / 2},${PX / 2}). One pixel is about ${mpp.toFixed(3)} metres.
+A small red marker at the centre of the image (pixel ${PX / 2},${PX / 2}) sits on the TARGET property. One pixel is about ${mpp.toFixed(3)} metres.
+${PROPERTY[property] ?? ""}
 
 Task:
 ${TASK[kind]}
@@ -139,14 +150,14 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
   try {
     const denied = await checkUser(req);
     if (denied) return reply({ error: denied }, 401);
-    const { lat, lng, zoom, kind } = await req.json();
+    const { lat, lng, zoom, kind, property } = await req.json();
     if (![lat, lng, zoom].every((v) => typeof v === "number" && isFinite(v))) return reply({ error: "Missing map position." }, 400);
     if (!["patio", "roof", "gutters"].includes(kind)) return reply({ error: "Unknown measurement type." }, 400);
     const z = Math.max(17, Math.min(21, Math.round(zoom)));
     const gkey = Deno.env.get("GOOGLE_MAPS_SERVER_KEY"), akey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!gkey || !akey) return reply({ error: "The AI measuring keys are not set up yet (GOOGLE_MAPS_SERVER_KEY and ANTHROPIC_API_KEY)." }, 503);
 
-    const img = await fetch(`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${z}&size=${SIZE}x${SIZE}&scale=${SCALE}&maptype=satellite&key=${gkey}`);
+    const img = await fetch(`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${z}&size=${SIZE}x${SIZE}&scale=${SCALE}&maptype=satellite&markers=size:tiny%7Ccolor:red%7C${lat},${lng}&key=${gkey}`);
     if (!img.ok) return reply({ error: `Satellite image failed (${img.status}). Check the Google key allows the Maps Static API.` }, 502);
     const mediaType = (img.headers.get("content-type") || "image/png").split(";")[0];
     const data = toBase64(await img.arrayBuffer());
@@ -161,7 +172,7 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
         tool_choice: { type: "auto" },
         messages: [{ role: "user", content: [
           { type: "image", source: { type: "base64", media_type: mediaType, data } },
-          { type: "text", text: prompt(kind as Kind, metresPerPixel(lat, z)) },
+          { type: "text", text: prompt(kind as Kind, metresPerPixel(lat, z), String(property || "")) },
         ] }],
       }),
     });

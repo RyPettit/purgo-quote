@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=0711ec938f">
+<link rel="stylesheet" href="purgo.css?v=e38fd1b442">
 </head>
 <body>
 <header class="topbar">
@@ -262,13 +262,14 @@
 
 <!-- MEASURE (dev) -->
 <main id="view-measure" class="wrap" hidden>
-  <div class="viewbar"><div><h2 class="vtitle">Measure <span class="tag">Test</span></h2><p class="sub">AI draws the outline on the satellite view. Drag the dots to correct it; the figures update as you go.</p></div>
+  <div class="viewbar"><div><h2 class="vtitle">Measure <span class="tag">Test</span></h2><p class="sub">Put the cross on the customer's house, choose the property type, then press AI outline. Drag the dots to correct it; the figures update as you go.</p></div>
     <div class="vb-actions"><button class="btn" type="button" id="mBack">Back to quote</button><button class="btn pri" type="button" id="mUse" disabled>Use</button></div></div>
   <div class="m-grid">
     <section class="card m-mapcard">
       <div class="m-bar">
         <div class="seg" id="mKind"><button type="button" data-k="patio" class="on">Drive / patio</button><button type="button" data-k="roof">Roof</button><button type="button" data-k="gutters">Gutters</button></div>
         <label class="f m-addr">Address<span class="inrow"><input id="mAddr" placeholder="House number, street, postcode"><button class="btn sm" type="button" id="mFind">Find</button></span></label>
+        <label class="f m-prop">Property<select id="mProp"><option value="detached">Detached</option><option value="semi" selected>Semi-detached</option><option value="end">End terrace</option><option value="mid">Mid terrace</option><option value="commercial">Commercial / other</option></select></label>
       </div>
       <div class="m-mapwrap"><div id="mMap"></div><div class="m-cross" aria-hidden="true"></div></div>
       <div class="m-tools">
@@ -326,6 +327,6 @@
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
 <script src="purgo.js?v=51384a5a59"></script>
-<script src="measure.js?v=834fd43705"></script>
+<script src="measure.js?v=fd800e5dc9"></script>
 </body>
 </html>

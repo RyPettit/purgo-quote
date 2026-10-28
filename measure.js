@@ -134,11 +134,11 @@ const MEASURE = (()=>{
   async function aiOutline(){
     stopDraw();
     const btn = el('mAi'); btn.disabled = true; btn.textContent = 'Measuring…';
-    status('Asking AI to outline the ' + KIND_LABEL[kind].toLowerCase() + '. This takes 10–30 seconds.', '');
+    status('Asking AI to outline the ' + KIND_LABEL[kind].toLowerCase() + ' of the ' + el('mProp').selectedOptions[0].text.toLowerCase() + ' property under the cross. This takes 10–30 seconds.', '');
     try{
       if(!navigator.onLine) throw new Error('You need a connection for AI outlines.');
       const c = gmap.getCenter();
-      const {data, error} = await sb.functions.invoke((window.PURGO_CONFIG||{}).measureFunction || 'measure', {body:{lat:c.lat(), lng:c.lng(), zoom:gmap.getZoom(), kind}});
+      const {data, error} = await sb.functions.invoke((window.PURGO_CONFIG||{}).measureFunction || 'measure', {body:{lat:c.lat(), lng:c.lng(), zoom:gmap.getZoom(), kind, property:el('mProp').value}});
       if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
       if(data.error) throw new Error(data.error);
       shapes.filter(s=>s.kind===kind && s.source==='ai').forEach(s=>removeShape(s.id));
@@ -216,6 +216,8 @@ const MEASURE = (()=>{
   async function open(tgt){
     target = tgt || null;
     show('measure');
+    const wt = $('wnType') && $('wnType').value; if(wt && !el('mProp').dataset.touched) el('mProp').value = wt==='D' ? 'detached' : wt==='T' ? 'mid' : 'semi';
+    if(ctype==='com' && !el('mProp').dataset.touched) el('mProp').value = 'commercial';
     const k = !tgt ? kind : tgt.startsWith('pw') ? 'patio' : tgt==='rf' ? 'roof' : 'gutters';
     status('');
     try{
@@ -231,6 +233,7 @@ const MEASURE = (()=>{
 
   function bind(){
     el('mFind').onclick = find;
+    el('mProp').addEventListener('change', ()=>{ el('mProp').dataset.touched = '1'; });
     el('mAddr').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); find(); } });
     document.querySelectorAll('#mKind button').forEach(b=> b.onclick = ()=> setKind(b.dataset.k));
     el('mAi').onclick = ()=> gmap && aiOutline();
