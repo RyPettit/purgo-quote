@@ -56,10 +56,12 @@ create table if not exists public.chemicals (
   cost numeric not null default 0,      -- £ per litre of concentrate
   cover numeric not null default 10,    -- m² per litre at working dilution
   markup numeric not null default 0,    -- %
+  app_rate numeric,                     -- m² per hour per worker to apply (blank = default rate)
   sort int not null default 0,
   active boolean not null default true,
   updated_at timestamptz not null default now()
 );
+alter table public.chemicals add column if not exists app_rate numeric;
 
 -- ============ Customers & quotes (all staff) ============
 create table if not exists public.addresses (
@@ -187,11 +189,11 @@ begin
   r := coalesce(r, '{}'::jsonb);
   if public.is_admin() then
     select value || jsonb_build_object('status', (select value from settings where key = 'fuel_status')) into f from settings where key = 'fuel';
-    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'cost', cost, 'cover', cover, 'markup', markup) order by sort, name), '[]'::jsonb)
+    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'cost', cost, 'cover', cover, 'markup', markup, 'app', app_rate) order by sort, name), '[]'::jsonb)
       into ch from chemicals where active;
     return jsonb_build_object('role', 'admin', 'rates', r, 'chems', ch, 'fuel', f);
   end if;
-  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'cover', cover, 'sell', round(cost * (1 + markup / 100), 4)) order by sort, name), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'cover', cover, 'sell', round(cost * (1 + markup / 100), 4), 'app', app_rate) order by sort, name), '[]'::jsonb)
     into ch from chemicals where active;
   return jsonb_build_object(
     'role', 'staff',
