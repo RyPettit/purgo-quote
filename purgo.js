@@ -47,7 +47,13 @@ const fmtPc = s => { const n = normPc(s); return n.length>=5 ? n.slice(0,-3)+' '
 const COST_KEYS = ['labourPaid','targetMargin','sandBag','sandMarkup','vanMpg','rigLph','waterCost'];
 const clone = x => JSON.parse(JSON.stringify(x));
 let R = clone(DEF), ROLE = null, ME = null, ratesDirty = false, removedChems = [];
-function markRatesDirty(){ ratesDirty = true; const b=$('saveRates'); if(b) b.disabled = false; }
+// Price list changes save themselves a moment after you stop typing (and straight away if the app is closed or hidden).
+let lastPBLoad = 0, saveTimer = null, saving = null, saveAgain = false;
+function markRatesDirty(){
+  ratesDirty = true; const b=$('saveRates'); if(b) b.disabled = false;
+  rateStatus('Unsaved changes…', '');
+  clearTimeout(saveTimer); saveTimer = setTimeout(()=>saveRatesNow(), 1500);
+}
 
 let ctype = 'res';
 let rfChems = null; // roof chemical treatments (null = not chosen yet, defaults to the usual roof biocide)
@@ -773,28 +779,52 @@ function applyPB(pb){
   R = Object.assign(base, pb.rates||{});
   R.chems = (pb.chems||[]).map(c=>Object.assign({}, c));
   if(ROLE==='admin' && pb.fuel){ fuel = pb.fuel; $('diesel').value = fuel.diesel; $('petrol').value = fuel.petrol; showFuel(); }
-  ratesDirty = false; removedChems = []; $('saveRates').disabled = true;
+  ratesDirty = false; removedChems = []; $('saveRates').disabled = true; lastPBLoad = Date.now();
   renderRates(); refreshChemSelects(); renderPw(); render();
 }
-$('saveRates').onclick = async ()=>{
-  const btn = $('saveRates'); btn.disabled = true; btn.textContent = 'Saving…';
-  try{
-    const rates = {}; Object.keys(DEF).forEach(k=>{ if(k!=='chems') rates[k] = R[k]; });
-    let r = await sb.from('settings').upsert({key:'rates', value:rates, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
-    const d = num('diesel'), p = num('petrol');
-    if(d!==fuel.diesel || p!==fuel.petrol){
-      fuel = {diesel:d, petrol:p, date:new Date().toISOString().slice(0,10), source:'set by '+ME.name};
-      r = await sb.from('settings').upsert({key:'fuel', value:{diesel:d, petrol:p, date:fuel.date, source:fuel.source}, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
+async function saveRatesNow(){
+  clearTimeout(saveTimer);
+  if(ROLE!=='admin' || !ratesDirty) return;
+  if(saving){ saveAgain = true; return saving; }
+  const btn = $('saveRates');
+  saving = (async ()=>{
+    ratesDirty = false; const removing = removedChems.slice();
+    btn.disabled = true; rateStatus('Saving…', '');
+    try{
+      const rates = {}; Object.keys(DEF).forEach(k=>{ if(k!=='chems') rates[k] = R[k]; });
+      let r = await sb.from('settings').upsert({key:'rates', value:rates, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
+      const d = num('diesel'), p = num('petrol');
+      if(d!==fuel.diesel || p!==fuel.petrol){
+        const nf = {diesel:d, petrol:p, date:new Date().toISOString().slice(0,10), source:'set by '+ME.name};
+        r = await sb.from('settings').upsert({key:'fuel', value:nf, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
+        fuel = Object.assign({}, fuel, nf); showFuel();
+      }
+      if(R.chems.length){
+        r = await sb.from('chemicals').upsert(R.chems.map((c,i)=>({id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, sort:i, active:true}))); if(r.error) throw r.error;
+      }
+      if(removing.length){ r = await sb.from('chemicals').update({active:false}).in('id', removing); if(r.error) throw r.error; }
+      removedChems = removedChems.filter(id=>!removing.includes(id));
+      // keep this device's offline copy in step (no re-draw, so typing isn't interrupted)
+      LS.set('purgoPB:'+ME.id, {role:'admin', rates, chems:R.chems.map(c=>({id:c.id, name:c.name, cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0})), fuel});
+      lastPBLoad = Date.now();
+      if(!ratesDirty) rateStatus('Saved ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + '. Staff get it next time they open the app.', 'ok');
+    }catch(e){
+      ratesDirty = true; btn.disabled = false;
+      rateStatus('NOT SAVED: ' + (isNetErr(e) ? 'no connection. It will try again when you are back online, or press Save now.' : (e.message||String(e))), 'bad');
     }
-    if(R.chems.length){
-      r = await sb.from('chemicals').upsert(R.chems.map((c,i)=>({id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, sort:i, active:true}))); if(r.error) throw r.error;
-    }
-    if(removedChems.length){ r = await sb.from('chemicals').update({active:false}).in('id', removedChems); if(r.error) throw r.error; }
-    await loadPriceBook();
-    rateFlash('Price list saved. Staff get it next time they open the app.');
-  }catch(e){ btn.disabled = false; rateFlash('Not saved: ' + (isNetErr(e) ? 'no connection. Try again when you are online.' : e.message)); }
-  btn.textContent = 'Save price list';
-};
+  })();
+  await saving; saving = null;
+  if(saveAgain){ saveAgain = false; if(ratesDirty) return saveRatesNow(); }
+}
+$('saveRates').onclick = ()=> saveRatesNow();
+function rateStatus(t, cls){ const m=$('rateMsg'); clearTimeout(rateFlash.t); m.textContent=t; m.className = 'hint rate-status ' + (cls||''); m.hidden = !t; }
+window.addEventListener('online', ()=>{ if(ratesDirty) saveRatesNow(); });
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden'){ if(ratesDirty) saveRatesNow(); return; }
+  // coming back to the app: pick up any price changes made on another device
+  if(ME && !ratesDirty && !saving && Date.now()-lastPBLoad > 60000 && navigator.onLine){ lastPBLoad = Date.now(); loadPriceBook().catch(()=>{}); }
+});
+window.addEventListener('pagehide', ()=>{ if(ratesDirty) saveRatesNow(); });
 function rateFlash(t){ const m=$('rateMsg'); m.textContent=t; m.hidden=false; clearTimeout(rateFlash.t); rateFlash.t=setTimeout(()=>m.hidden=true,5000); }
 window.addEventListener('beforeunload', e=>{ if(ratesDirty && ROLE==='admin'){ e.preventDefault(); e.returnValue=''; } });
 
