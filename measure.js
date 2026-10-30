@@ -251,7 +251,7 @@ const MEASURE = (()=>{
         const r = pwRows[+target.slice(3)]; if(r){ r.sqm = Math.round(tot); if(surf){ r.surf = surf; if(surf==='block') r.sand = true; } if(soil) r.soil = soil; }
       } else {
         pwRows = pwRows.filter(r=>+r.sqm>0);
-        mine.forEach(s=>{ const sur = surf || 'block'; pwRows.push({name:s.label, surf:sur, sqm:Math.round(shownValue(s).n), soil:soil||'normal', sand:sur==='block', chem:''}); });
+        mine.forEach(s=>{ const sur = surf || 'block'; pwRows.push({name:s.label, surf:sur, sqm:Math.round(shownValue(s).n), soil:soil||'normal', sand:sur==='block', chems:[]}); });
       }
       $('on-pw').checked = true; renderPw();
     } else if(kind==='roof'){
@@ -524,7 +524,7 @@ const PHOTO = (()=>{
     const surf = sugg && ['block','concrete','tarmac','stone','imprint','porcelain','deck'].includes(sugg.surface) ? sugg.surface : 'block';
     const soil = sugg && ['light','normal','heavy'].includes(sugg.soiling) ? sugg.soiling : 'normal';
     pwRows = pwRows.filter(r=>+r.sqm>0);
-    pwRows.push({name: el('pLabel').value.trim() || 'Driveway', surf, sqm: Math.round(m.area), soil, sand: surf==='block', chem:''});
+    pwRows.push({name: el('pLabel').value.trim() || 'Driveway', surf, sqm: Math.round(m.area), soil, sand: surf==='block', chems:[]});
     if(sugg && sugg.weeds==='heavy' && $('cx_weeds')) $('cx_weeds').checked = true;
     $('on-pw').checked = true; renderPw(); syncSvc(); show('quote'); render();
     flash(`Added ${Math.round(m.area)} m² from the photo`);

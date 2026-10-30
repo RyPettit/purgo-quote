@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=68c7dfc347">
+<link rel="stylesheet" href="purgo.css?v=d9b197367e">
 </head>
 <body>
 <header class="topbar">
@@ -170,7 +170,7 @@
             <label class="f">Scaffold tower?<select id="rfTw"><option value="auto">Auto (needed over 1 storey)</option><option value="yes">Yes</option><option value="no">No</option></select></label>
             <label class="f">Tower positions<input id="rfPos" type="number" min="1" value="2"></label>
             <label class="f">Tower crew<input id="wTower" type="number" min="1" max="6" placeholder="2"></label>
-            <label class="f">Chemical treatment<select id="rfChem" class="chemSel"></select></label>
+            <div class="f chemf" id="rfChemBox"></div>
           </div>
           <p class="hint">Anything over one storey uses the scaffold tower: erect/dismantle labour plus £<span data-r="towerDay"></span> per day.</p>
           <div id="rfWarn"></div>
@@ -377,7 +377,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=9fe509f694"></script>
-<script src="measure.js?v=48b5177f1c"></script>
+<script src="purgo.js?v=20d450ca13"></script>
+<script src="measure.js?v=3d1e81201a"></script>
 </body>
 </html>

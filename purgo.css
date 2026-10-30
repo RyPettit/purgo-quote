@@ -63,6 +63,13 @@ label.ck small{color:var(--muted);font-family:var(--f-mono);font-size:.75rem;mar
 .rows{display:flex;flex-direction:column;gap:10px}
 .arow{border:1px dashed var(--line);border-radius:8px;padding:10px;display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));align-items:end}
 .arow .rm{justify-self:end}
+.chemf{grid-column:span 2;min-width:0}
+.chemf>span{display:block}
+.chpick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:40px}
+.chchip{display:inline-flex;align-items:center;gap:4px;background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:4px 4px 4px 12px;font-weight:600;font-size:.9rem}
+.chchip button{border:0;background:transparent;color:var(--muted);font-size:1.1rem;line-height:1;width:24px;height:24px;border-radius:50%;cursor:pointer}
+.chchip button:hover{background:var(--line);color:var(--ink)}
+.chpick select{width:auto;flex:1 1 150px;min-width:0}
 .hint{font-size:.82rem;color:var(--muted);margin:6px 0 0}
 .note{font-size:.85rem;border-radius:6px;padding:8px 10px;margin:4px 0}
 .note.w{background:var(--warn-bg);color:var(--warn)}
