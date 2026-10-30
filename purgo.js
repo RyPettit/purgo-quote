@@ -50,7 +50,8 @@ let R = clone(DEF), ROLE = null, ME = null, ratesDirty = false, removedChems = [
 function markRatesDirty(){ ratesDirty = true; const b=$('saveRates'); if(b) b.disabled = false; }
 
 let ctype = 'res';
-let pwRows = [{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chem:''}];
+let rfChems = null; // roof chemical treatments (null = not chosen yet, defaults to the usual roof biocide)
+let pwRows = [{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
 
 /* ---------- postcode data ---------- */
 let PC = null; const pcCache = {};
@@ -172,20 +173,31 @@ function renderChems(){
     <td><button class="btn sm" type="button" data-delchem="${i}">Remove</button></td></tr>`).join('');
   refreshChemSelects();
 }
-function chemOptions(sel){ return `<option value="">None</option>` + R.chems.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join(''); }
-function refreshChemSelects(){
-  const rf = $('rfChem'); const cur = rf.dataset.init ? rf.value : 'c2'; rf.innerHTML = chemOptions(cur); rf.dataset.init = 1;
-  document.querySelectorAll('select[data-f="chem"]').forEach(s=>{ const i=+s.dataset.i; s.innerHTML = chemOptions(pwRows[i].chem); });
+// ---- chemical treatments: any number per area / roof ----
+function normRow(r){ if(!Array.isArray(r.chems)) r.chems = r.chem ? [r.chem] : []; delete r.chem; return r; }
+function chemList(key){
+  if(key==='rf'){ if(rfChems===null) rfChems = R.chems.some(c=>c.id==='c2') ? ['c2'] : []; return rfChems; }
+  const r = pwRows[+key.slice(3)]; return r ? normRow(r).chems : [];
 }
+function chemPicker(key, label){
+  const list = chemList(key).filter(id=>R.chems.some(c=>c.id===id));
+  const left = R.chems.filter(c=>!list.includes(c.id));
+  const chips = list.map(id=>{ const c = R.chems.find(x=>x.id===id); return `<span class="chchip">${esc(c.name)}<button type="button" data-rmchem="${key}|${id}" aria-label="Remove ${esc(c.name)}">×</button></span>`; }).join('');
+  const add = left.length ? `<select data-addchem="${key}" aria-label="Add a chemical treatment"><option value="">${list.length?'+ Add another':'+ Add treatment'}</option>${left.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>` : '';
+  return `<div class="f chemf"><span>${label}</span><div class="chpick">${chips}${add || (list.length?'':'<small class="hint">No chemicals set up yet.</small>')}</div></div>`;
+}
+function renderRfChem(){ const b = $('rfChemBox'); if(b) b.outerHTML = chemPicker('rf', 'Chemical treatments').replace('<div class="f chemf">', '<div class="f chemf" id="rfChemBox">'); }
+function refreshChemSelects(){ renderPw(); }
 function renderPw(){
   $('pwRows').innerHTML = pwRows.map((r,i)=>`<div class="arow">
     <label class="f">Area<input id="pw_n_${i}" data-i="${i}" data-f="name" value="${esc(r.name)}"></label>
     <label class="f">Surface<select id="pw_s_${i}" data-i="${i}" data-f="surf">${Object.entries(SURF).map(([k,v])=>`<option value="${k}" ${k===r.surf?'selected':''}>${v[0]}</option>`).join('')}</select></label>
     <label class="f">Size (m²)<input id="pw_q_${i}" type="number" min="0" data-i="${i}" data-f="sqm" value="${r.sqm}"></label>
     <label class="f">Soiling<select id="pw_o_${i}" data-i="${i}" data-f="soil">${['light','normal','heavy'].map(v=>`<option value="${v}" ${v===r.soil?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></label>
-    <label class="f">Chemical<select id="pw_c_${i}" data-i="${i}" data-f="chem">${chemOptions(r.chem)}</select></label>
+    ${chemPicker('pw:'+i, 'Chemical treatments')}
     <label class="ck" style="align-self:center"><input type="checkbox" id="pw_d_${i}" data-i="${i}" data-f="sand" ${r.sand?'checked':''}>Re-sand joints</label>
     <button class="btn sm rm" type="button" data-rmpw="${i}">Remove</button></div>`).join('') || '<p class="hint">No areas yet.</p>';
+  renderRfChem();
 }
 function renderCx(){
   $('cxList').innerHTML = CX.map(([k,l])=>`<label class="ck"><input type="checkbox" id="${k}" data-cx="${k}">${l} <small>+<span data-r="${k}">${R[k]}</span>h</small></label>`).join('');
@@ -240,7 +252,7 @@ function calc(){
         line(g, `${r.name}: kiln sand re-fill`, bags*sellBag + sH*L, `${bags} × 25kg bags at ${gbp(sellBag)} + ${sH.toFixed(1)}h brushing in`);
         if(!s[2]) o.warn.push(['w', `${r.name}: re-sanding is unusual on ${s[0].toLowerCase()}. Check it has sanded joints.`]);
       }
-      if(r.chem) wh += chemCharge(g, r.chem, sqm, r.name);
+      normRow(r).chems.forEach(id=>{ wh += chemCharge(g, id, sqm, r.name); });
       if(r.surf==='tarmac') o.notes.push('Tarmac is washed at reduced pressure to avoid lifting the surface.');
       if(r.surf==='imprint') o.notes.push('Imprinted concrete may need resealing after cleaning; quoted separately on request.');
     });
@@ -317,7 +329,7 @@ function calc(){
       t *= (pitch==='steep'?1.3:1) * ({light:1,moderate:1.2,heavy:1.45}[moss]);
       o.setupT += R.roofSetup;
       bill(g, 'Set-up & pack-down', R.roofSetup, wSet, true);
-      if($('rfChem').value) t += chemCharge(g, $('rfChem').value, a, 'roof treatment') / w;
+      chemList('rf').forEach(id=>{ t += chemCharge(g, id, a, 'roof treatment') / w; });
       const tw = $('rfTw').value; const towerUsed = tw==='yes' || (tw==='auto' && st>1);
       if(towerUsed){
         const wt = want('wTower', 2);
@@ -551,14 +563,16 @@ const FORM_SKIP = /^(r_|ch_|pw_)/;
 function snapshot(){
   const f = {};
   document.querySelectorAll('.col input[id], .col select[id]').forEach(el=>{ if(FORM_SKIP.test(el.id)) return; f[el.id] = el.type==='checkbox' ? el.checked : el.value; });
-  return {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), ctype};
+  const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfChems:chemList('rf').slice(), ctype};
+  return out;
 }
 function restore(s){
   ctype = s.ctype||'res';
   document.querySelectorAll('#ctype button').forEach(x=>x.classList.toggle('on', x.dataset.v===ctype));
   $('comBox').hidden = ctype!=='com';
-  pwRows = s.pwRows||[];
-  renderPw();
+  pwRows = (s.pwRows||[]).map(normRow);
+  rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
+  renderPw(); renderRfChem();
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
 }
@@ -574,14 +588,15 @@ document.addEventListener('input', e=>{
   if(t.id==='diesel'||t.id==='petrol') markRatesDirty();
   render();
 });
-document.addEventListener('change', e=>{ if(e.target.dataset.f){ const i=+e.target.dataset.i; const r=pwRows[i]; r[e.target.dataset.f] = e.target.type==='checkbox'?e.target.checked:e.target.value; if(e.target.dataset.f==='surf' && r.surf==='block'){ r.sand = true; const cb=$('pw_d_'+i); if(cb) cb.checked = true; } } if(e.target.classList.contains('svc')) syncSvc(); render(); });
+document.addEventListener('change', e=>{ if(e.target.dataset.addchem && e.target.value){ const l = chemList(e.target.dataset.addchem); if(!l.includes(e.target.value)) l.push(e.target.value); if(e.target.dataset.addchem==='rf') renderRfChem(); else renderPw(); render(); return; } if(e.target.dataset.f){ const i=+e.target.dataset.i; const r=pwRows[i]; r[e.target.dataset.f] = e.target.type==='checkbox'?e.target.checked:e.target.value; if(e.target.dataset.f==='surf' && r.surf==='block'){ r.sand = true; const cb=$('pw_d_'+i); if(cb) cb.checked = true; } } if(e.target.classList.contains('svc')) syncSvc(); render(); });
 document.addEventListener('click', e=>{
   const t = e.target;
+  if(t.dataset.rmchem!==undefined){ const [k, id] = t.dataset.rmchem.split('|'); const l = chemList(k); const j = l.indexOf(id); if(j>=0) l.splice(j,1); if(k==='rf') renderRfChem(); else renderPw(); render(); }
   if(t.dataset.rmpw!==undefined){ pwRows.splice(+t.dataset.rmpw,1); renderPw(); render(); }
-  if(t.dataset.delchem!==undefined){ const id=R.chems[+t.dataset.delchem].id; removedChems.push(id); R.chems.splice(+t.dataset.delchem,1); pwRows.forEach(r=>{if(r.chem===id) r.chem='';}); markRatesDirty(); renderChems(); renderPw(); render(); }
+  if(t.dataset.delchem!==undefined){ const id=R.chems[+t.dataset.delchem].id; removedChems.push(id); R.chems.splice(+t.dataset.delchem,1); pwRows.forEach(r=>{ normRow(r); r.chems = r.chems.filter(x=>x!==id); }); if(rfChems) rfChems = rfChems.filter(x=>x!==id); markRatesDirty(); renderChems(); renderPw(); render(); }
 });
 $('pc').addEventListener('blur', ()=>{ const v=$('pc').value; if(normPc(v).length>=5){ $('pc').value = fmtPc(v); resolvePc(); render(); } });
-$('addPw').onclick = ()=>{ pwRows.push({name:'Area '+(pwRows.length+1),surf:'block',sqm:0,soil:'normal',sand:true,chem:''}); renderPw(); render(); };
+$('addPw').onclick = ()=>{ pwRows.push({name:'Area '+(pwRows.length+1),surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}); renderPw(); render(); };
 $('addChem').onclick = ()=>{ R.chems.push({id:'c'+Date.now(),name:'New chemical',cost:0,cover:10,markup:0}); markRatesDirty(); renderChems(); render(); };
 $('resetRates').onclick = ()=>{ const keep = R.chems; R = Object.assign(clone(DEF), {chems:keep}); markRatesDirty(); renderRates(); renderPw(); render(); };
 document.querySelectorAll('#ctype button').forEach(b=> b.onclick = ()=>{
@@ -610,8 +625,8 @@ $('newJob').onclick = ()=>{
   ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','rfA','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0);
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
-  pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chem:''}];
-  loc = null; makeRef(); renderPw(); render();
+  pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
+  rfChems = null; loc = null; makeRef(); renderPw(); renderRfChem(); render();
 };
 
 
