@@ -24,7 +24,7 @@ const RATE_GROUPS = [
   ['Labour & margin',[['labour','Ancillary labour charged £/hr per worker'],['labourPaid','Labour paid £/hr per worker'],['targetMargin','Target margin %'],['dayHours','Working day (hours)'],['minRes','Minimum charge, residential £'],['minCom','Minimum charge, commercial £'],['vat','VAT %']]],
   ['Travel & fuel',[['freeMiles','Free travel radius (miles)'],['perMile','Travel charge £/mile beyond radius'],['roadFactor','Road distance factor'],['avgMph','Average travel speed mph'],['vanMpg','Van mpg (Transit Custom)'],['rigLph','Pressure washer petrol L/hr']]],
   ['Pressure washing',[['pwRate','Wash & slurry £/m²'],['heavySoil','Heavy soiling uplift £/m²'],['pwMin','Pressure washing minimum £'],['pwSetupTime','Set-up & pack-down time (h, not billed)'],['sf_block','Block paving m²/hr'],['sf_concrete','Concrete m²/hr'],['sf_tarmac','Tarmac m²/hr'],['sf_stone','Natural stone m²/hr'],['sf_imprint','Imprinted concrete m²/hr'],['sf_porcelain','Porcelain m²/hr'],['sf_deck','Decking m²/hr']]],
-  ['Sand & chemicals',[['sandBag','Kiln sand 25kg bag £'],['sandCover','m² per bag (refill)'],['sandRate','Sand brushing m²/hr per worker'],['sandMarkup','Sand markup %'],['chemApp','Default chemical application m²/hr']]],
+  ['Sand',[['sandBag','Kiln sand 25kg bag £'],['sandCover','m² per bag (refill)'],['sandRate','Sand brushing m²/hr per worker'],['sandMarkup','Sand markup %']]],
   ['Gutters',[['gutRate','Survey & clear £/m (1–2 storey)'],['gutRate3','Survey & clear £/m (3 storey)'],['gutMin','Gutter minimum £'],['guard','Downpipe guard £ each'],['fascia','Fascia & soffit £/m'],['gutSetup','Set-up & pack-down (h, billed)'],['gutSpeed','Clear speed m/hr (1–2 storey)'],['gutSpeed3','Clear speed m/hr (3 storey)'],['fasSpeed','Fascia speed m/hr']]],
   ['Windows',[['perWin','Per window £'],['priceT','Terrace £'],['priceS','Semi £'],['priceD','Detached £'],['stdT','Windows in std terrace'],['stdS','Windows in std semi'],['stdD','Windows in std detached'],['sillT','Sills & doors, terrace £'],['sillS','Sills & doors, semi £'],['sillD','Sills & doors, detached £'],['firstClean','First clean uplift %'],['winMins','Minutes per window'],['winSetup','Set-up minutes (not billed)'],['waterPerWin','Litres per window'],['waterCost','Pure water £/litre']]],
   ['Roof',[['scrape','Scraping £/m²'],['lpw','Low pressure wash £/m²'],['steepUp','Steep pitch uplift %'],['mossModUp','Moderate moss uplift %'],['mossHeavyUp','Heavy moss uplift %'],['roofSetup','Set-up & pack-down (h, billed)'],['scrapeRate','Scraping m²/hr per worker'],['lpwRate','LP wash m²/hr'],['towerDay','Scaffold tower £/day'],['towerErect','Tower erect (h per position)'],['towerDismantle','Tower dismantle (h per position)']]],
@@ -182,6 +182,7 @@ function renderRates(){
   document.querySelectorAll('[data-r]').forEach(el=> el.textContent = R[el.dataset.r]);
 }
 function renderChems(){
+  const dA = $('r_chemApp'); if(dA && document.activeElement!==dA) dA.value = R.chemApp;
   $('chemBody').innerHTML = R.chems.map((c,i)=>`<tr>
     <td><input id="ch_n_${c.id}" data-ci="${i}" data-cf="name" value="${esc(c.name)}"></td>
     <td><input id="ch_c_${c.id}" type="number" step="any" data-ci="${i}" data-cf="cost" value="${c.cost}"></td>
@@ -602,7 +603,7 @@ function flash(t){ const m=$('toast'); m.textContent=t; m.hidden=false; clearTim
 /* ---------- events ---------- */
 document.addEventListener('input', e=>{
   const t = e.target;
-  if(t.dataset.rk){ const v=parseFloat(t.value); if(!isNaN(v)){ R[t.dataset.rk]=v; markRatesDirty(); document.querySelectorAll(`[data-r="${t.dataset.rk}"]`).forEach(el=>el.textContent=v); } }
+  if(t.dataset.rk){ const v=parseFloat(t.value); if(!isNaN(v)){ R[t.dataset.rk]=v; markRatesDirty(); document.querySelectorAll(`[data-r="${t.dataset.rk}"]`).forEach(el=>el.textContent=v); if(t.dataset.rk==='chemApp') renderChems(); } }
   else if(t.dataset.cf){ const c=R.chems[+t.dataset.ci]; c[t.dataset.cf] = t.dataset.cf==='name' ? t.value : t.dataset.cf==='app' ? (parseFloat(t.value)>0 ? parseFloat(t.value) : null) : (parseFloat(t.value)||0); markRatesDirty(); if(t.dataset.cf==='name') refreshChemSelects(); }
   else if(t.dataset.f){ const r=pwRows[+t.dataset.i]; r[t.dataset.f] = t.type==='checkbox' ? t.checked : t.value; }
   if(t.id==='pc') resolvePc();
