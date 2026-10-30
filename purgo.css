@@ -205,3 +205,6 @@ label.f{justify-content:space-between}
 
 /* customer quote preview: always shown as it will look on paper */
 .qpreview{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;color-scheme:light}
+.rate-status{font-weight:600}
+.rate-status.ok{color:#2e7d4f}
+.rate-status.bad{color:#fff;background:#b3261e;padding:6px 10px;border-radius:8px}
