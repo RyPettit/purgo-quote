@@ -912,15 +912,18 @@ $('saveCopy').onclick = ()=> saveQuote(true);
 
 /* ---------- saved quotes list ---------- */
 let quotesLoaded = false;
+let quotesLoading = false, quotesErr = '';
 async function loadQuotes(){
-  renderQuoteList();
+  quotesLoading = true; renderQuoteList();
   if(!sb || !navigator.onLine){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); renderQuoteList(); return; }
   try{
     const sel = 'id,ref,status,customer,address,postcode,total,created_at,created_by,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
     const {data, error} = await sb.from('quotes').select(sel).order('created_at', {ascending:false}).limit(500);
     if(error) throw error;
     quotes = data; quotesLoaded = true; LS.set('purgoQuotes', quotes);
-  }catch(e){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); }
+    quotesErr = '';
+  }catch(e){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); quotesErr = isNetErr(e) ? 'Could not reach the server, so this is the copy saved on this device.' : ('Could not load saved quotes: ' + (e.message||e)); }
+  quotesLoading = false;
   const by = $('qBy'), cur = by.value;
   const names = [...new Set(quotes.map(q=>q.created_by_name).filter(Boolean))].sort();
   by.innerHTML = '<option value="">Anyone</option>' + names.map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('');
@@ -932,14 +935,15 @@ function renderQuoteList(){
   const list = queued.concat(quotes).filter(x=>
     (!q || [x.customer,x.address,x.postcode,x.ref].join(' ').toLowerCase().includes(q)) &&
     (!st || x.status===st) && (!by || x.created_by_name===by));
-  $('qSub').textContent = `${quotes.length} saved${queued.length?` · ${queued.length} waiting to upload`:''}`;
+  $('qSub').textContent = quotesLoading && !quotes.length ? 'Loading…' : `${quotes.length} saved${queued.length?` · ${queued.length} waiting to upload`:''}`;
   $('qList').innerHTML = list.length ? list.slice(0,200).map(x=>{
     const qc = Array.isArray(x.quote_costs) ? x.quote_costs[0] : x.quote_costs;
     const prof = ROLE==='admin' ? (qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : `<small style="display:block;color:var(--muted);font-size:.72rem">open for profit</small>`) : '';
     const status = x.queued ? '<span class="pill queued">Waiting</span>' :
       `<select data-status="${x.id}" aria-label="Status">${['draft','sent','accepted','declined'].map(s=>`<option value="${s}" ${s===x.status?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select>`;
     return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small><small>${esc(x.ref)} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button></div>`;
-  }).join('') : `<p class="hint">${quotes.length ? 'No quotes match.' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
+  }).join('') : `<p class="hint">${quotesLoading && !quotes.length ? 'Loading saved quotes…' : quotes.length ? 'No quotes match the search or filters above.' : quotesErr ? '' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
+  if(quotesErr) $('qList').insertAdjacentHTML('afterbegin', `<p class="note w">${esc(quotesErr)} <button class="btn sm" type="button" onclick="loadQuotes()">Try again</button></p>`);
 }
 ['qSearch','qStatus','qBy'].forEach(id=> $(id).addEventListener('input', renderQuoteList));
 $('qRefresh').onclick = loadQuotes;
