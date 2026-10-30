@@ -48,6 +48,16 @@ const COST_KEYS = ['labourPaid','targetMargin','sandBag','sandMarkup','vanMpg','
 const clone = x => JSON.parse(JSON.stringify(x));
 let R = clone(DEF), ROLE = null, ME = null, ratesDirty = false, removedChems = [];
 // Price list changes save themselves a moment after you stop typing (and straight away if the app is closed or hidden).
+// What the server last told us. Saves send only fields that differ from this, so a phone left open
+// with an old price list can never put old values back over changes made on another device.
+let baseline = {rates:{}, chems:{}}, pbOffline = false;
+const CHEM_F = ['name','cost','cover','markup'];
+function chemRow(c, i){ return {id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, sort:i}; }
+function markBaseline(){
+  baseline = {rates:{}, chems:{}};
+  Object.keys(DEF).forEach(k=>{ if(k!=='chems') baseline.rates[k] = R[k]; });
+  R.chems.forEach((c,i)=> baseline.chems[c.id] = chemRow(c,i));
+}
 let lastPBLoad = 0, saveTimer = null, saving = null, saveAgain = false;
 function markRatesDirty(){
   ratesDirty = true; const b=$('saveRates'); if(b) b.disabled = false;
@@ -766,7 +776,7 @@ async function loadPriceBook(){
     if(error) throw error;
     pb = data; LS.set('purgoPB:'+ME.id, pb);
   }catch(e){
-    pb = LS.get('purgoPB:'+ME.id, null);
+    pb = LS.get('purgoPB:'+ME.id, null); if(pb) pb = Object.assign({}, pb, {offline:true});
     if(!pb) throw new Error(isNetErr(e) ? 'You need a connection the first time you sign in on this device.' : (e.message||'Could not load the price list.'));
   }
   applyPB(pb);
@@ -780,6 +790,8 @@ function applyPB(pb){
   R.chems = (pb.chems||[]).map(c=>Object.assign({}, c));
   if(ROLE==='admin' && pb.fuel){ fuel = pb.fuel; $('diesel').value = fuel.diesel; $('petrol').value = fuel.petrol; showFuel(); }
   ratesDirty = false; removedChems = []; $('saveRates').disabled = true; lastPBLoad = Date.now();
+  pbOffline = !!pb.offline; markBaseline();
+  if(ROLE==='admin' && pbOffline) rateStatus('Showing the offline copy of the price list. Changes you make here save once you are back online, but only the fields you change.', '');
   renderRates(); refreshChemSelects(); renderPw(); render();
 }
 async function saveRatesNow(){
@@ -791,20 +803,32 @@ async function saveRatesNow(){
     ratesDirty = false; const removing = removedChems.slice();
     btn.disabled = true; rateStatus('Saving…', '');
     try{
-      const rates = {}; Object.keys(DEF).forEach(k=>{ if(k!=='chems') rates[k] = R[k]; });
-      let r = await sb.from('settings').upsert({key:'rates', value:rates, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
+      // rates: send only the ones changed here, merged into what is on the server now
+      const changed = {}; Object.keys(DEF).forEach(k=>{ if(k!=='chems' && R[k]!==baseline.rates[k]) changed[k] = R[k]; });
+      let r, rates = null;
+      if(Object.keys(changed).length){
+        r = await sb.from('settings').select('value').eq('key','rates').maybeSingle(); if(r.error) throw r.error;
+        rates = Object.assign({}, (r.data && r.data.value) || {}, changed);
+        r = await sb.from('settings').upsert({key:'rates', value:rates, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
+        Object.assign(baseline.rates, changed);
+      }
       const d = num('diesel'), p = num('petrol');
       if(d!==fuel.diesel || p!==fuel.petrol){
         const nf = {diesel:d, petrol:p, date:new Date().toISOString().slice(0,10), source:'set by '+ME.name};
         r = await sb.from('settings').upsert({key:'fuel', value:nf, updated_at:new Date().toISOString()}); if(r.error) throw r.error;
         fuel = Object.assign({}, fuel, nf); showFuel();
       }
-      if(R.chems.length){
-        r = await sb.from('chemicals').upsert(R.chems.map((c,i)=>({id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, sort:i, active:true}))); if(r.error) throw r.error;
+      // chemicals: only new rows and the fields changed on this device
+      for(const [i, c] of R.chems.entries()){
+        const now = chemRow(c, i), was = baseline.chems[c.id];
+        if(!was){ r = await sb.from('chemicals').insert(Object.assign(now, {active:true})); if(r.error) throw r.error; baseline.chems[c.id] = chemRow(c,i); continue; }
+        const diff = {}; CHEM_F.concat('sort').forEach(f=>{ if(now[f]!==was[f]) diff[f] = now[f]; });
+        if(Object.keys(diff).length){ r = await sb.from('chemicals').update(diff).eq('id', c.id); if(r.error) throw r.error; Object.assign(was, diff); }
       }
-      if(removing.length){ r = await sb.from('chemicals').update({active:false}).in('id', removing); if(r.error) throw r.error; }
+      if(removing.length){ r = await sb.from('chemicals').update({active:false}).in('id', removing); if(r.error) throw r.error; removing.forEach(id=> delete baseline.chems[id]); }
       removedChems = removedChems.filter(id=>!removing.includes(id));
       // keep this device's offline copy in step (no re-draw, so typing isn't interrupted)
+      if(!rates){ rates = {}; Object.keys(DEF).forEach(k=>{ if(k!=='chems') rates[k] = R[k]; }); }
       LS.set('purgoPB:'+ME.id, {role:'admin', rates, chems:R.chems.map(c=>({id:c.id, name:c.name, cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0})), fuel});
       lastPBLoad = Date.now();
       if(!ratesDirty) rateStatus('Saved ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + '. Staff get it next time they open the app.', 'ok');
@@ -818,7 +842,7 @@ async function saveRatesNow(){
 }
 $('saveRates').onclick = ()=> saveRatesNow();
 function rateStatus(t, cls){ const m=$('rateMsg'); clearTimeout(rateFlash.t); m.textContent=t; m.className = 'hint rate-status ' + (cls||''); m.hidden = !t; }
-window.addEventListener('online', ()=>{ if(ratesDirty) saveRatesNow(); });
+window.addEventListener('online', ()=>{ if(ratesDirty) saveRatesNow(); else if(pbOffline && ME) loadPriceBook().catch(()=>{}); });
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden'){ if(ratesDirty) saveRatesNow(); return; }
   // coming back to the app: pick up any price changes made on another device
