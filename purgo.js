@@ -24,7 +24,7 @@ const RATE_GROUPS = [
   ['Labour & margin',[['labour','Ancillary labour charged £/hr per worker'],['labourPaid','Labour paid £/hr per worker'],['targetMargin','Target margin %'],['dayHours','Working day (hours)'],['minRes','Minimum charge, residential £'],['minCom','Minimum charge, commercial £'],['vat','VAT %']]],
   ['Travel & fuel',[['freeMiles','Free travel radius (miles)'],['perMile','Travel charge £/mile beyond radius'],['roadFactor','Road distance factor'],['avgMph','Average travel speed mph'],['vanMpg','Van mpg (Transit Custom)'],['rigLph','Pressure washer petrol L/hr']]],
   ['Pressure washing',[['pwRate','Wash & slurry £/m²'],['heavySoil','Heavy soiling uplift £/m²'],['pwMin','Pressure washing minimum £'],['pwSetupTime','Set-up & pack-down time (h, not billed)'],['sf_block','Block paving m²/hr'],['sf_concrete','Concrete m²/hr'],['sf_tarmac','Tarmac m²/hr'],['sf_stone','Natural stone m²/hr'],['sf_imprint','Imprinted concrete m²/hr'],['sf_porcelain','Porcelain m²/hr'],['sf_deck','Decking m²/hr']]],
-  ['Sand & chemicals',[['sandBag','Kiln sand 25kg bag £'],['sandCover','m² per bag (refill)'],['sandRate','Sand brushing m²/hr per worker'],['sandMarkup','Sand markup %'],['chemLabour','Chemical application £/m²'],['chemApp','Chemical application m²/hr']]],
+  ['Sand & chemicals',[['sandBag','Kiln sand 25kg bag £'],['sandCover','m² per bag (refill)'],['sandRate','Sand brushing m²/hr per worker'],['sandMarkup','Sand markup %'],['chemApp','Default chemical application m²/hr']]],
   ['Gutters',[['gutRate','Survey & clear £/m (1–2 storey)'],['gutRate3','Survey & clear £/m (3 storey)'],['gutMin','Gutter minimum £'],['guard','Downpipe guard £ each'],['fascia','Fascia & soffit £/m'],['gutSetup','Set-up & pack-down (h, billed)'],['gutSpeed','Clear speed m/hr (1–2 storey)'],['gutSpeed3','Clear speed m/hr (3 storey)'],['fasSpeed','Fascia speed m/hr']]],
   ['Windows',[['perWin','Per window £'],['priceT','Terrace £'],['priceS','Semi £'],['priceD','Detached £'],['stdT','Windows in std terrace'],['stdS','Windows in std semi'],['stdD','Windows in std detached'],['sillT','Sills & doors, terrace £'],['sillS','Sills & doors, semi £'],['sillD','Sills & doors, detached £'],['firstClean','First clean uplift %'],['winMins','Minutes per window'],['winSetup','Set-up minutes (not billed)'],['waterPerWin','Litres per window'],['waterCost','Pure water £/litre']]],
   ['Roof',[['scrape','Scraping £/m²'],['lpw','Low pressure wash £/m²'],['steepUp','Steep pitch uplift %'],['mossModUp','Moderate moss uplift %'],['mossHeavyUp','Heavy moss uplift %'],['roofSetup','Set-up & pack-down (h, billed)'],['scrapeRate','Scraping m²/hr per worker'],['lpwRate','LP wash m²/hr'],['towerDay','Scaffold tower £/day'],['towerErect','Tower erect (h per position)'],['towerDismantle','Tower dismantle (h per position)']]],
@@ -51,8 +51,9 @@ let R = clone(DEF), ROLE = null, ME = null, ratesDirty = false, removedChems = [
 // What the server last told us. Saves send only fields that differ from this, so a phone left open
 // with an old price list can never put old values back over changes made on another device.
 let baseline = {rates:{}, chems:{}}, pbOffline = false;
-const CHEM_F = ['name','cost','cover','markup'];
-function chemRow(c, i){ return {id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, sort:i}; }
+const CHEM_F = ['name','cost','cover','markup','app'];
+const chemDb = r => { const o = Object.assign({}, r); if('app' in o){ o.app_rate = o.app; delete o.app; } return o; };
+function chemRow(c, i){ return {id:c.id, name:c.name||'Chemical', cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, app:c.app>0?+c.app:null, sort:i}; }
 function markBaseline(){
   baseline = {rates:{}, chems:{}};
   Object.keys(DEF).forEach(k=>{ if(k!=='chems') baseline.rates[k] = R[k]; });
@@ -186,6 +187,7 @@ function renderChems(){
     <td><input id="ch_c_${c.id}" type="number" step="any" data-ci="${i}" data-cf="cost" value="${c.cost}"></td>
     <td><input id="ch_v_${c.id}" type="number" step="any" data-ci="${i}" data-cf="cover" value="${c.cover}"></td>
     <td><input id="ch_m_${c.id}" type="number" step="any" data-ci="${i}" data-cf="markup" value="${c.markup}"></td>
+    <td><input id="ch_a_${c.id}" type="number" step="any" min="1" data-ci="${i}" data-cf="app" value="${c.app>0?c.app:''}" placeholder="${R.chemApp}"></td>
     <td><button class="btn sm" type="button" data-delchem="${i}">Remove</button></td></tr>`).join('');
   refreshChemSelects();
 }
@@ -243,9 +245,10 @@ function calc(){
     const mat = litres * (c.cost||0);
     o.cost.chem += mat;
     const sell = c.sell!=null ? litres*c.sell : mat*(1+(c.markup||0)/100);
-    line(g, `${c.name}: ${what}`, sell + area*R.chemLabour, `${litres.toFixed(1)} L over ${area} m² + application ${area} m² × ${gbp(R.chemLabour)}`);
+    const rate = c.app>0 ? c.app : R.chemApp, hrs = area / rate;
+    line(g, `${c.name}: ${what}`, sell + hrs*R.labour, `${litres.toFixed(1)} L over ${area} m² + application ${hrs.toFixed(2)}h (${area} m² at ${rate} m²/hr) × ${gbp(R.labour)}`);
     if(!(c.sell||c.cost)) o.warn.push(['w', ROLE==='admin' ? `${c.name} has no price yet. Add it under Admin → Chemicals.` : `${c.name} has no price yet. Ask for it to be added before sending this quote.`]);
-    return area / R.chemApp; // worker-hours
+    return hrs; // worker-hours
   };
   const wSet = want('wSetup', crew), wCx = want('wCx', crew);
 
@@ -598,7 +601,7 @@ function flash(t){ const m=$('toast'); m.textContent=t; m.hidden=false; clearTim
 document.addEventListener('input', e=>{
   const t = e.target;
   if(t.dataset.rk){ const v=parseFloat(t.value); if(!isNaN(v)){ R[t.dataset.rk]=v; markRatesDirty(); document.querySelectorAll(`[data-r="${t.dataset.rk}"]`).forEach(el=>el.textContent=v); } }
-  else if(t.dataset.cf){ const c=R.chems[+t.dataset.ci]; c[t.dataset.cf] = t.dataset.cf==='name' ? t.value : (parseFloat(t.value)||0); markRatesDirty(); if(t.dataset.cf==='name') refreshChemSelects(); }
+  else if(t.dataset.cf){ const c=R.chems[+t.dataset.ci]; c[t.dataset.cf] = t.dataset.cf==='name' ? t.value : t.dataset.cf==='app' ? (parseFloat(t.value)>0 ? parseFloat(t.value) : null) : (parseFloat(t.value)||0); markRatesDirty(); if(t.dataset.cf==='name') refreshChemSelects(); }
   else if(t.dataset.f){ const r=pwRows[+t.dataset.i]; r[t.dataset.f] = t.type==='checkbox' ? t.checked : t.value; }
   if(t.id==='pc') resolvePc();
   if(t.id==='diesel'||t.id==='petrol') markRatesDirty();
@@ -816,15 +819,15 @@ async function saveRatesNow(){
       // chemicals: only new rows and the fields changed on this device
       for(const [i, c] of R.chems.entries()){
         const now = chemRow(c, i), was = baseline.chems[c.id];
-        if(!was){ r = await sb.from('chemicals').insert(Object.assign(now, {active:true})); if(r.error) throw r.error; baseline.chems[c.id] = chemRow(c,i); continue; }
+        if(!was){ r = await sb.from('chemicals').insert(chemDb(Object.assign({}, now, {active:true}))); if(r.error) throw r.error; baseline.chems[c.id] = chemRow(c,i); continue; }
         const diff = {}; CHEM_F.concat('sort').forEach(f=>{ if(now[f]!==was[f]) diff[f] = now[f]; });
-        if(Object.keys(diff).length){ r = await sb.from('chemicals').update(diff).eq('id', c.id); if(r.error) throw r.error; Object.assign(was, diff); }
+        if(Object.keys(diff).length){ r = await sb.from('chemicals').update(chemDb(diff)).eq('id', c.id); if(r.error) throw r.error; Object.assign(was, diff); }
       }
       if(removing.length){ r = await sb.from('chemicals').update({active:false}).in('id', removing); if(r.error) throw r.error; removing.forEach(id=> delete baseline.chems[id]); }
       removedChems = removedChems.filter(id=>!removing.includes(id));
       // keep this device's offline copy in step (no re-draw, so typing isn't interrupted)
       if(!rates){ rates = {}; Object.keys(DEF).forEach(k=>{ if(k!=='chems') rates[k] = R[k]; }); }
-      LS.set('purgoPB:'+ME.id, {role:'admin', rates, chems:R.chems.map(c=>({id:c.id, name:c.name, cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0})), fuel});
+      LS.set('purgoPB:'+ME.id, {role:'admin', rates, chems:R.chems.map(c=>({id:c.id, name:c.name, cost:+c.cost||0, cover:+c.cover||1, markup:+c.markup||0, app:c.app>0?+c.app:null})), fuel});
       lastPBLoad = Date.now();
       if(!ratesDirty) rateStatus('Saved ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + '. Staff get it next time they open the app.', 'ok');
     }catch(e){

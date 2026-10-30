@@ -278,8 +278,8 @@
     <section class="card">
       <h2>Chemicals</h2>
       <div class="svc-body">
-        <p class="hint">Cost per litre of concentrate and the m² one litre covers at working dilution. Application labour is charged at £<span data-r="chemLabour"></span>/m² on top of the product.</p>
-        <div class="chemtbl"><table><thead><tr><th>Name</th><th>£ / litre</th><th>m² per litre</th><th>Markup %</th><th></th></tr></thead><tbody id="chemBody"></tbody></table></div>
+        <p class="hint">Cost per litre of concentrate and the m² one litre covers at working dilution. Apply m²/hr is how fast one person applies it; it sets the job time and the application charge (time × £<span data-r="labour"></span>/hr). Leave it blank to use the default of <span data-r="chemApp"></span> m²/hr.</p>
+        <div class="chemtbl"><table><thead><tr><th>Name</th><th>£ / litre</th><th>m² per litre</th><th>Markup %</th><th>Apply m²/hr</th><th></th></tr></thead><tbody id="chemBody"></tbody></table></div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn sm" type="button" id="addChem">+ Add chemical</button>
           <button class="btn sm" type="button" id="resetRates">Reset to starting prices</button>
@@ -297,6 +297,6 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=3ce7a7af2f"></script>
+<script src="purgo.js?v=c28bac1eec"></script>
 </body>
 </html>
