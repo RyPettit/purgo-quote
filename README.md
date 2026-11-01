@@ -5,7 +5,11 @@ shared price list and save them; only the admin can see costs and profit or
 change prices.
 
 - **Hosting:** Cloudflare Pages, built straight from this repository (no build step).
-- **Database and logins:** Supabase (London region).
+- **Database and logins:** Supabase. Two separate projects:
+  - **Live** `purgo` (London) — used by quote.purgo-clean.com and purgo-quote.pages.dev.
+  - **Dev** (Ireland) — used by dev.purgo-quote.pages.dev, preview links and local testing.
+    Started as a full copy of live on 1 Nov 2026; nothing done on dev reaches live.
+  `config.js` picks the database from the web address, so the two can't be mixed up.
 - **Works offline:** installs as an app on phones; quotes saved without signal
   upload automatically when the phone reconnects.
 
@@ -14,7 +18,7 @@ change prices.
 | File | What it is |
 |---|---|
 | `index.html`, `purgo.css`, `purgo.js` | The app |
-| `config.js` | Supabase project URL and public (anon/publishable) key |
+| `config.js` | Live and dev Supabase details; the web address decides which is used |
 | `supabase/schema.sql` | Tables, access rules and starting prices. Safe to re-run. |
 | `supabase/make-admin.sql` | Makes your account the admin |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and phone install |
