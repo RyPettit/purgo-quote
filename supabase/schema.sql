@@ -110,7 +110,7 @@ create table if not exists public.quote_costs (
   computed_at timestamptz not null default now()
 );
 
-create or replace function public.touch_updated_at() returns trigger language plpgsql as $$
+create or replace function public.touch_updated_at() returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at = now(); return new; end $$;
 drop trigger if exists quotes_touch on public.quotes;
 create trigger quotes_touch before update on public.quotes for each row execute function public.touch_updated_at();
@@ -118,7 +118,7 @@ drop trigger if exists chemicals_touch on public.chemicals;
 create trigger chemicals_touch before update on public.chemicals for each row execute function public.touch_updated_at();
 
 -- staff cannot change who made a quote or when
-create or replace function public.protect_quote_owner() returns trigger language plpgsql as $$
+create or replace function public.protect_quote_owner() returns trigger language plpgsql set search_path = public as $$
 begin
   if not public.is_admin() then
     new.created_by = old.created_by; new.created_by_name = old.created_by_name; new.created_at = old.created_at;
@@ -204,6 +204,12 @@ end $$;
 
 revoke execute on function public.price_book() from public, anon;
 grant execute on function public.price_book() to authenticated;
+-- trigger-only and helper functions: not callable by signed-out visitors
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.is_admin() from public, anon;
+revoke execute on function public.is_staff() from public, anon;
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.is_staff() to authenticated;
 
 -- ============ Starting prices (only if none saved yet) ============
 insert into public.settings (key, value) values
