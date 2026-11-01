@@ -9,9 +9,8 @@
   window.PURGO_CONFIG = live ? {
     env: 'live',
     url: 'https://iixqkqkmdholetujuqin.supabase.co',
-    key: 'sb_publishable_zfndNRZtMBkaP85UDpX6Bg_dgHXXY5Y',
-    googleMapsKey: 'AIzaSyA8dEa4D-beDLkn3oM0Yg1w-DaFRKkFrrk',
-    measureFunction: 'Measure'
+    key: 'sb_publishable_zfndNRZtMBkaP85UDpX6Bg_dgHXXY5Y'
+    // no measuring on live: the AI and map keys live only in the dev project
   } : {
     env: 'dev',
     url: 'https://mzqgazqbkmenssrdbuiq.supabase.co',
