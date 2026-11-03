@@ -666,6 +666,49 @@ const round2 = n => Math.round((+n||0)*100)/100;
 // Christmas tree on the sign-in screen, 1 November to 6 January (Twelfth Night) every year
 (function(){ const d = new Date(), m = d.getMonth(), day = d.getDate(); const t = document.getElementById('xmasTree');
   if(t && (m===10 || m===11 || (m===0 && day<=6))) t.removeAttribute('hidden'); })();
+// Snow behind the sign-in box, same dates as the tree. Stops once signed in; off for reduced-motion settings.
+(function(){
+  const d = new Date(), m = d.getMonth(), day = d.getDate();
+  if(!(m===10 || m===11 || (m===0 && day<=6))) return;
+  if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const login = document.getElementById('view-login'); if(!login) return;
+  const cv = document.createElement('canvas'); cv.className = 'snow'; cv.setAttribute('aria-hidden','true');
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  let W = 0, H = 0, dpr = 1, flakes = [], running = false, last = 0;
+  function size(){
+    dpr = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+    cv.width = W*dpr; cv.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+    const want = Math.round(Math.min(160, Math.max(50, W*H/9000)));
+    while(flakes.length < want) flakes.push(make(true));
+    flakes.length = want;
+  }
+  function make(anyY){ const r = 1 + Math.random()*2.6;
+    return {x: Math.random()*W, y: anyY ? Math.random()*H : -10, r, vy: 18 + r*14 + Math.random()*10, sway: Math.random()*Math.PI*2, sw: .4 + Math.random()*1.1, a: .55 + Math.random()*.4}; }
+  function colour(){ // pale blue on the light background, white on dark
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    const n = parseInt(bg.replace('#',''),16); const lum = isNaN(n) ? 255 : ((n>>16)&255)*.3 + ((n>>8)&255)*.59 + (n&255)*.11;
+    return lum > 128 ? '109,167,196' : '255,255,255';
+  }
+  function frame(t){
+    if(login.hidden || document.hidden){ running = false; ctx.clearRect(0,0,W,H); cv.style.display = 'none'; return; }
+    const dt = Math.min(.05, (t - (last||t))/1000); last = t;
+    const c = colour(); ctx.clearRect(0,0,W,H);
+    for(const f of flakes){
+      f.y += f.vy*dt; f.sway += f.sw*dt; f.x += Math.sin(f.sway)*12*dt;
+      if(f.y > H+10){ Object.assign(f, make(false)); }
+      if(f.x < -10) f.x = W+10; else if(f.x > W+10) f.x = -10;
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fillStyle = `rgba(${c},${f.a})`; ctx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+  function start(){ if(running || login.hidden || document.hidden) return; running = true; last = 0; cv.style.display = ''; requestAnimationFrame(frame); }
+  size(); addEventListener('resize', size);
+  // start whenever the sign-in screen is showing
+  new MutationObserver(start).observe(login, {attributes:true, attributeFilter:['hidden']});
+  document.addEventListener('visibilitychange', start);
+  start();
+})();
 const VIEWS = ['login','quote','quotes','admin'];
 const isNetErr = e => !navigator.onLine || /fetch|network|Failed to fetch|Load failed/i.test(String(e && (e.message||e)));
 
