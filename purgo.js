@@ -481,13 +481,17 @@ function calc(){
 function fmtH(h){ const m = Math.round(h*60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
 
 /* ---------- output ---------- */
-let refStr = '';
-function makeRef(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); refStr = `${window.PURGO_DEV?'DEV-':''}PQ-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${initials()}`; editing = null; syncEditing(); }
+let refStr = '';   // internal key for saving (made on the phone, never shown to customers)
+let quoteNo = null; // running number given by the database when the quote is first saved
+const noLabel = n => `${window.PURGO_DEV?'DEV-':''}PQ-${n}`;
+function shortRef(){ return quoteNo ? noLabel(quoteNo) : 'New quote'; }
+function fullRef(){ const c = $('cust').value.trim(); return c ? `${shortRef()} – ${c}` : shortRef(); }
+function makeRef(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); refStr = `${window.PURGO_DEV?'DEV-':''}PQ-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${initials()}`; quoteNo = null; editing = null; syncEditing(); }
 function initials(){ const n = (ME && ME.name) || 'X'; return n.split(/[\s._-]+/).filter(Boolean).map(w=>w[0]).join('').slice(0,3).toUpperCase() || 'X'; }
 let last = null;
 function render(){
   const o = calc(); last = o;
-  $('qref').textContent = `${refStr} · ${ctype==='com'?'Commercial':'Residential'}`; $('qrefTop').textContent = refStr;
+  $('qref').textContent = `${fullRef()} · ${ctype==='com'?'Commercial':'Residential'}`; $('qrefTop').textContent = shortRef();
   $('tTotal').innerHTML = gbp(o.total) + `<small>${$('vatOn').checked?'inc VAT':'no VAT'}</small>`;
   $('tSub').textContent = $('vatOn').checked ? `${gbp(o.sub)} + VAT ${gbp(o.vat)}` : 'VAT not added';
   let rows = '';
@@ -561,7 +565,7 @@ function quoteModel(o){
   const std = standardNotes(o); syncNotesBox(std);
   const notes = customNotes===null ? std : customNotes.slice();
   return {
-    ref:refStr, date:new Date().toLocaleDateString('en-GB'),
+    ref: quoteNo ? noLabel(quoteNo) : 'Draft', fileRef: fullRef(), date:new Date().toLocaleDateString('en-GB'),
     customer:$('cust').value.trim(), address:[$('addr').value.trim(), fmtPc($('pc').value)].filter(Boolean).join(', '),
     groups, sub:o.sub, vat:o.vat, vatRate:R.vat, total:o.total,
     annual: (ctype==='com' && num('coFreq')>1) ? {visits:num('coFreq'), total:o.total*num('coFreq')} : null,
@@ -647,7 +651,15 @@ $('qNotesReset').onclick = ()=>{ customNotes = null; render(); };
 /* ---------- quote PDF ---------- */
 function loadScript(src){ return new Promise((ok, bad)=>{ if(document.querySelector(`script[data-src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.dataset.src = src; s.onload = ok; s.onerror = ()=>bad(new Error('Could not load '+src+'. Check your connection.')); document.head.appendChild(s); }); }
 async function imgData(src){ const b = await (await fetch(src)).blob(); return await new Promise(r=>{ const fr = new FileReader(); fr.onload = ()=>r(fr.result); fr.readAsDataURL(b); }); }
+// Save before sending so the customer's copy carries its number (skipped with no signal; it then says Draft)
+async function ensureNumber(){
+  if(!navigator.onLine || !sb || !ME) return;
+  const o = last || calc();
+  if(!(o.sub>0) || (!$('addr').value.trim() && !normPc($('pc').value))) return;
+  await saveQuote(false);
+}
 async function quotePdf(){
+  await ensureNumber();
   const m = lastQuoteModel; if(!m || !m.groups.length){ flash('Add some work to the quote first'); return; }
   const btn = $('pdfQ'); btn.disabled = true; const label = btn.textContent; btn.textContent = 'Making PDF…';
   try{
@@ -709,8 +721,7 @@ async function quotePdf(){
         doc.text('•', L+0.5, y); t.forEach((s,i)=> doc.text(s, L+5, y + i*4.6)); y += t.length*4.6 + 1.5; });
     }
     footer();
-    const who = (m.customer || m.address || '').replace(/[^\w\s-]/g,'').trim().slice(0,40);
-    doc.save(`Purgo quote ${m.ref}${who?' - '+who:''}.pdf`);
+    doc.save(`${m.fileRef.replace(/–/g,'-').replace(/[\\/:*?"<>|]/g,'').slice(0,80)}.pdf`);
     flash('Quote PDF saved');
   }catch(e){ flash('Could not make the PDF: ' + (e.message||e)); }
   btn.disabled = false; btn.textContent = label;
@@ -746,17 +757,18 @@ document.querySelectorAll('#ctype button').forEach(b=> b.onclick = ()=>{
   render();
 });
 $('copyQ').onclick = async ()=>{
-  const m = lastQuoteModel || quoteModel(last || calc());
-  const html = quoteHTML(m), text = quoteText(m);
+  // the save runs inside the copy so phones keep the tap permission while it finishes
+  const ready = ensureNumber().catch(()=>{}).then(()=>{ const m = lastQuoteModel || quoteModel(last || calc()); return {html:quoteHTML(m), text:quoteText(m)}; });
   const done = msg => { $('copied').textContent = msg; $('copied').hidden = false; setTimeout(()=>$('copied').hidden = true, 2500); };
+  let html, text;
   try{
     if(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
-      await navigator.clipboard.write([new ClipboardItem({'text/html': new Blob([html], {type:'text/html'}), 'text/plain': new Blob([text], {type:'text/plain'})})]);
+      await navigator.clipboard.write([new ClipboardItem({'text/html': ready.then(r=>new Blob([r.html], {type:'text/html'})), 'text/plain': ready.then(r=>new Blob([r.text], {type:'text/plain'}))})]);
       return done('Copied. Paste into an email to keep the table.');
     }
-    await navigator.clipboard.writeText(text); done('Copied');
+    ({html, text} = await ready); await navigator.clipboard.writeText(text); done('Copied');
   }catch(e){
-    try{ await navigator.clipboard.writeText(text); done('Copied'); }
+    try{ ({html, text} = await ready); await navigator.clipboard.writeText(text); done('Copied'); }
     catch(e2){ const r = document.createRange(); r.selectNodeContents($('qPreview')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); done('Selected. Press copy on your keyboard.'); }
   }
 };
@@ -873,7 +885,7 @@ async function flushOutbox(){
   const left = []; let stop = false;
   for(const item of box){
     if(stop){ left.push(item); continue; }
-    try{ await pushQuote(item.rec, item.addr, item.costs); }
+    try{ const saved = await pushQuote(item.rec, item.addr, item.costs); if(item.rec.ref===refStr){ quoteNo = saved.quote_no; editing = {id:saved.id, ref:refStr}; syncEditing(); render(); } }
     catch(e){ left.push(item); if(isNetErr(e)) stop = true; }
   }
   setOutbox(left);
@@ -1045,11 +1057,11 @@ function buildRecord(o, ref){
 }
 function costRecord(o){ return {cost_total:round2(o.costTotal), profit:round2(o.profit), margin:Math.round(o.margin*10)/10, costs:{lines:o.costs.map(([l,v,d])=>({label:l, amt:round2(v), detail:d})), diesel:num('diesel'), petrol:num('petrol'), crew:o.crew, hours:Math.round(o.hours*100)/100}, computed_at:new Date().toISOString()}; }
 async function pushQuote(rec, addr, costs){
-  const {data, error} = await sb.from('quotes').upsert(rec, {onConflict:'ref'}).select('id').single();
+  const {data, error} = await sb.from('quotes').upsert(rec, {onConflict:'ref'}).select('id,quote_no').single();
   if(error) throw error;
   if(addr.line || addr.postcode) await sb.from('addresses').upsert(addr, {onConflict:'key'});
   if(costs){ const r = await sb.from('quote_costs').upsert(Object.assign({quote_id:data.id}, costs)); if(r.error) throw r.error; }
-  return data.id;
+  return data;
 }
 async function saveQuote(asNew){
   const o = last || calc();
@@ -1060,9 +1072,9 @@ async function saveQuote(asNew){
   const btn = $('saveQ'); btn.disabled = true;
   try{
     if(!navigator.onLine) throw new Error('offline');
-    const id = await pushQuote(item.rec, item.addr, item.costs);
-    editing = {id, ref:refStr}; syncEditing();
-    flash(`Saved ${refStr}`);
+    const saved = await pushQuote(item.rec, item.addr, item.costs);
+    editing = {id:saved.id, ref:refStr}; quoteNo = saved.quote_no; syncEditing(); render();
+    flash(`Saved ${fullRef()}`);
     loadAddresses();
   }catch(e){
     if(isNetErr(e) || e.message==='offline'){
@@ -1082,7 +1094,7 @@ async function loadQuotes(){
   quotesLoading = true; renderQuoteList();
   if(!sb || !navigator.onLine){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); renderQuoteList(); return; }
   try{
-    const sel = 'id,ref,status,customer,address,postcode,total,created_at,created_by,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
+    const sel = 'id,ref,quote_no,status,customer,address,postcode,total,created_at,created_by,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
     const {data, error} = await sb.from('quotes').select(sel).order('created_at', {ascending:false}).limit(500);
     if(error) throw error;
     quotes = data; quotesLoaded = true; LS.set('purgoQuotes', quotes);
@@ -1098,7 +1110,7 @@ function renderQuoteList(){
   const q = $('qSearch').value.trim().toLowerCase(), st = $('qStatus').value, by = $('qBy').value;
   const queued = ME ? outbox().map(x=>Object.assign({queued:true, status:'draft', created_at:x.queuedAt}, x.rec)) : [];
   const list = queued.concat(quotes).filter(x=>
-    (!q || [x.customer,x.address,x.postcode,x.ref].join(' ').toLowerCase().includes(q)) &&
+    (!q || [x.customer,x.address,x.postcode,x.quote_no?noLabel(x.quote_no):'',x.quote_no||''].join(' ').toLowerCase().includes(q)) &&
     (!st || x.status===st) && (!by || x.created_by_name===by));
   $('qSub').textContent = quotesLoading && !quotes.length ? 'Loading…' : `${quotes.length} saved${queued.length?` · ${queued.length} waiting to upload`:''}`;
   $('qList').innerHTML = list.length ? list.slice(0,200).map(x=>{
@@ -1106,7 +1118,7 @@ function renderQuoteList(){
     const prof = ROLE==='admin' ? (qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : `<small style="display:block;color:var(--muted);font-size:.72rem">open for profit</small>`) : '';
     const status = x.queued ? '<span class="pill queued">Waiting</span>' :
       `<select data-status="${x.id}" aria-label="Status">${['draft','sent','accepted','declined'].map(s=>`<option value="${s}" ${s===x.status?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select>`;
-    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small><small>${esc(x.ref)} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button></div>`;
+    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small><small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button></div>`;
   }).join('') : `<p class="hint">${quotesLoading && !quotes.length ? 'Loading saved quotes…' : quotes.length ? 'No quotes match the search or filters above.' : quotesErr ? '' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
   if(quotesErr) $('qList').insertAdjacentHTML('afterbegin', `<p class="note w">${esc(quotesErr)} <button class="btn sm" type="button" onclick="loadQuotes()">Try again</button></p>`);
 }
@@ -1122,14 +1134,14 @@ document.addEventListener('click', async e=>{
   const b = e.target.closest('[data-openq],[data-openq-local]'); if(!b) return;
   if(b.dataset.openqLocal){
     const it = outbox().find(x=>x.rec.ref===b.dataset.openqLocal); if(!it) return;
-    refStr = it.rec.ref; restore(it.rec.state); editing = null; syncEditing(); show('quote'); return;
+    refStr = it.rec.ref; quoteNo = null; restore(it.rec.state); editing = null; syncEditing(); show('quote'); return;
   }
   b.disabled = true;
-  const {data, error} = await sb.from('quotes').select('id,ref,state,quote_costs(quote_id)').eq('id', b.dataset.openq).maybeSingle();
+  const {data, error} = await sb.from('quotes').select('id,ref,quote_no,state,quote_costs(quote_id)').eq('id', b.dataset.openq).maybeSingle();
   b.disabled = false;
   if(error || !data){ flash('Could not open: ' + (error ? (isNetErr(error)?'no connection':error.message) : 'quote not found')); return; }
-  refStr = data.ref; restore(data.state); editing = {id:data.id, ref:data.ref}; syncEditing();
-  show('quote'); flash(`Opened ${data.ref}`);
+  refStr = data.ref; quoteNo = data.quote_no; restore(data.state); editing = {id:data.id, ref:data.ref}; syncEditing();
+  show('quote'); flash(`Opened ${fullRef()}`);
   if(ROLE==='admin' && !(data.quote_costs && (Array.isArray(data.quote_costs) ? data.quote_costs.length : true))){
     sb.from('quote_costs').upsert(Object.assign({quote_id:data.id}, costRecord(last||calc()))).then(()=>{});
   }

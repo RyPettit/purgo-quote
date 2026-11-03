@@ -224,3 +224,22 @@ select * from (values
   ('c3', 'Post-treat / algae inhibitor (TBC)', 0, 10, 0, 3)
 ) v(id, name, cost, cover, markup, sort)
 where not exists (select 1 from public.chemicals);
+
+-- ============ Running quote numbers (PQ-1001, PQ-1002 …) ============
+create sequence if not exists public.quote_no_seq start 1001;
+alter table public.quotes add column if not exists quote_no bigint unique;
+with o as (select id, 1000 + row_number() over (order by created_at, id) as n from public.quotes where quote_no is null)
+update public.quotes q set quote_no = o.n from o where q.id = o.id;
+select setval('public.quote_no_seq', greatest(1000, coalesce((select max(quote_no) from public.quotes), 1000)));
+alter table public.quotes alter column quote_no set default nextval('public.quote_no_seq');
+alter table public.quotes alter column quote_no set not null;
+alter sequence public.quote_no_seq owned by public.quotes.quote_no;
+grant usage, select on sequence public.quote_no_seq to authenticated;
+create or replace function public.protect_quote_owner() returns trigger language plpgsql set search_path = public as $$
+begin
+  new.quote_no = old.quote_no;   -- a quote keeps its number for life
+  if not public.is_admin() then
+    new.created_by = old.created_by; new.created_by_name = old.created_by_name; new.created_at = old.created_at;
+  end if;
+  return new;
+end $$;
