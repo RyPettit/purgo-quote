@@ -368,7 +368,7 @@ function calc(){
       if((ty==='slate'||ty==='clay') && m!=='scrape') rfW.push(['w','Low pressure washing is not advised on slate or clay. Consider hand scrape plus biocide soft wash.']);
       if(ty==='flat' && m!=='lpw') rfW.push(['w','Scraping is not suitable for felt or membrane roofs. Use a low pressure or soft wash.']);
       if(st>=3) rfW.push(['w','Three storey roof: confirm tower height and ground conditions on site, or price for scaffold hire.']);
-      o.notes.push('Roof cleaning creates debris in the gutters. We recommend a gutter clear on the same visit.');
+      o.notes.push('Roof cleaning creates debris in the gutters. Purgō will clean and survey gutters free of charge with all roof cleans.');
     }
   }
   $('rfWarn').innerHTML = rfW.map(([c,t])=>`<div class="note ${c}">${t}</div>`).join('');
@@ -524,7 +524,7 @@ function render(){
 /* ---------- customer quote: table preview, rich copy and plain text ---------- */
 // Notes on the customer quote: the standard ones, unless someone has edited them for this quote
 let customNotes = null; // array of lines when edited, otherwise null
-function standardNotes(o){ const n = [...new Set(o.notes)]; n.push('Quote valid for 30 days. Price based on the information provided; we will confirm on arrival before starting.'); return n; }
+function standardNotes(o){ const n = [...new Set(o.notes)]; n.push('Quote valid for 30 days.'); return n; }
 function syncNotesBox(std){
   const box = $('qNotes'); if(!box) return;
   if(customNotes===null && document.activeElement!==box) box.value = std.join('\n');
