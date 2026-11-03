@@ -550,7 +550,7 @@ function standardNotes(o){
 }
 function syncNotesBox(std){
   const box = $('qNotes'); if(!box) return;
-  if(customNotes===null && document.activeElement!==box) box.value = std.join('\n');
+  if(customNotes===null && document.activeElement!==box) box.value = std.map(x=>'• '+x).join('\n');
   $('qNotesState').textContent = customNotes===null ? 'Standard notes' : 'Edited for this quote';
   $('qNotesReset').hidden = customNotes===null;
 }
@@ -591,7 +591,9 @@ function quoteHTML(m){
   h += `</tfoot></table>`;
   if(m.annual) h += `<p style="margin:10px 0 0">Price per visit. ${m.annual.visits} visits per year = <b>${gbp(m.annual.total)}</b> a year.</p>`;
   h += `<div style="margin-top:12px;padding:10px 12px;background:#e2eff7;border-left:4px solid #326986;border-radius:4px"><div style="font-weight:800;margin-bottom:3px">${ACCEPT_TITLE}</div>${esc(ACCEPT_TEXT)}</div>`;
-  h += `<div style="margin-top:14px;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#326986">Notes</div><ul style="margin:6px 0 0;padding-left:18px">${m.notes.map(n=>`<li style="margin:3px 0">${esc(n)}</li>`).join('')}</ul>`;
+  // bullets drawn as a table so they line up in every email app
+  h += `<div style="margin-top:14px;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#326986">Notes</div>`;
+  h += `<table style="${F}border-collapse:collapse;margin-top:6px;font-size:14px;color:#132f47">${m.notes.map(n=>`<tr><td style="vertical-align:top;padding:2px 8px 4px 2px;color:#326986;font-weight:800">•</td><td style="vertical-align:top;padding:2px 0 4px">${esc(n)}</td></tr>`).join('')}</table>`;
   h += `<p style="margin:14px 0 0;color:#53708a">Purgō, family run exterior cleaning<br>Tel 07930 877034 · www.purgo-clean.com</p></div>`;
   return h;
 }
@@ -604,7 +606,7 @@ function quoteText(m){
   L.push(rule, pad('Subtotal', m.sub)); if(m.vat) L.push(pad(`VAT ${m.vatRate}%`, m.vat)); L.push(pad(m.vat?'TOTAL':'TOTAL (no VAT)', m.total), rule, '');
   if(m.annual) L.push(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, '');
   L.push(ACCEPT_TITLE.toUpperCase(), ACCEPT_TEXT, '');
-  L.push('NOTES'); m.notes.forEach(n=>L.push('- '+n));
+  L.push('NOTES'); m.notes.forEach(n=>L.push('• '+n));
   L.push('', 'Purgō, family run exterior cleaning', 'Tel 07930 877034 · www.purgo-clean.com');
   return L.join('\n');
 }
@@ -636,7 +638,10 @@ function restore(s){
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
 }
-$('qNotes').addEventListener('input', e=>{ e.stopPropagation(); customNotes = $('qNotes').value.split('\n').map(x=>x.trim()).filter(Boolean); render(); });
+$('qNotes').addEventListener('input', e=>{ e.stopPropagation(); customNotes = $('qNotes').value.split('\n').map(x=>x.replace(/^\s*[•\-*]\s*/, '').trim()).filter(Boolean); render(); });
+// pressing Enter in the notes box starts the next note with a bullet
+$('qNotes').addEventListener('keydown', e=>{ if(e.key!=='Enter' || e.shiftKey) return; e.preventDefault(); const b = e.target, a = b.selectionStart, z = b.selectionEnd;
+  b.setRangeText('\n• ', a, z, 'end'); b.dispatchEvent(new Event('input', {bubbles:true})); });
 $('qNotesReset').onclick = ()=>{ customNotes = null; render(); };
 
 /* ---------- quote PDF ---------- */
