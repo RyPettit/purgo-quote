@@ -177,6 +177,8 @@ body:not(.is-admin) .admin-only{display:none!important}
 @keyframes twinkle{0%,100%{opacity:1}50%{opacity:.35}}
 @keyframes glow{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
 @media (prefers-reduced-motion: reduce){.xmas .lights circle,.xmas .star{animation:none}}
+.snow{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:0}
+.login{z-index:1}
 .login .logo.dark{display:none}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .login .logo.light{display:none}:root:not([data-theme="light"]) .login .logo.dark{display:block}}
 :root[data-theme="dark"] .login .logo.light{display:none}
