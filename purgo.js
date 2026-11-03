@@ -522,10 +522,19 @@ function render(){
   renderCustomerQuote(o);
 }
 /* ---------- customer quote: table preview, rich copy and plain text ---------- */
+// Notes on the customer quote: the standard ones, unless someone has edited them for this quote
+let customNotes = null; // array of lines when edited, otherwise null
+function standardNotes(o){ const n = [...new Set(o.notes)]; n.push('Quote valid for 30 days. Price based on the information provided; we will confirm on arrival before starting.'); return n; }
+function syncNotesBox(std){
+  const box = $('qNotes'); if(!box) return;
+  if(customNotes===null && document.activeElement!==box) box.value = std.join('\n');
+  $('qNotesState').textContent = customNotes===null ? 'Standard notes' : 'Edited for this quote';
+  $('qNotesReset').hidden = customNotes===null;
+}
 function quoteModel(o){
   const groups = o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:l.amt})), sub:g.lines.reduce((s,l)=>s+l.amt,0)}));
-  const notes = [...new Set(o.notes)];
-  notes.push('Quote valid for 30 days. Price based on the information provided; we will confirm on arrival before starting.');
+  const std = standardNotes(o); syncNotesBox(std);
+  const notes = customNotes===null ? std : customNotes.slice();
   return {
     ref:refStr, date:new Date().toLocaleDateString('en-GB'),
     customer:$('cust').value.trim(), address:[$('addr').value.trim(), fmtPc($('pc').value)].filter(Boolean).join(', '),
@@ -584,6 +593,7 @@ function snapshot(){
   const f = {};
   document.querySelectorAll('.col input[id], .col select[id]').forEach(el=>{ if(FORM_SKIP.test(el.id)) return; f[el.id] = el.type==='checkbox' ? el.checked : el.value; });
   const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfChems:chemList('rf').slice(), ctype};
+  if(customNotes!==null) out.notes = customNotes.slice();
   if(window.PURGO_DEV && typeof MEASURE!=='undefined'){ const m = MEASURE.snapshot(); if(m.length) out.measures = m; }
   return out;
 }
@@ -592,12 +602,85 @@ function restore(s){
   document.querySelectorAll('#ctype button').forEach(x=>x.classList.toggle('on', x.dataset.v===ctype));
   $('comBox').hidden = ctype!=='com';
   pwRows = (s.pwRows||[]).map(normRow);
+  customNotes = Array.isArray(s.notes) ? s.notes.slice() : null;
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
   if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
   renderPw(); renderRfChem();
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
 }
+$('qNotes').addEventListener('input', e=>{ e.stopPropagation(); customNotes = $('qNotes').value.split('\n').map(x=>x.trim()).filter(Boolean); render(); });
+$('qNotesReset').onclick = ()=>{ customNotes = null; render(); };
+
+/* ---------- quote PDF ---------- */
+function loadScript(src){ return new Promise((ok, bad)=>{ if(document.querySelector(`script[data-src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.dataset.src = src; s.onload = ok; s.onerror = ()=>bad(new Error('Could not load '+src+'. Check your connection.')); document.head.appendChild(s); }); }
+async function imgData(src){ const b = await (await fetch(src)).blob(); return await new Promise(r=>{ const fr = new FileReader(); fr.onload = ()=>r(fr.result); fr.readAsDataURL(b); }); }
+async function quotePdf(){
+  const m = lastQuoteModel; if(!m || !m.groups.length){ flash('Add some work to the quote first'); return; }
+  const btn = $('pdfQ'); btn.disabled = true; const label = btn.textContent; btn.textContent = 'Making PDF…';
+  try{
+    await loadScript('vendor/jspdf-2.5.2.umd.min.js'); await loadScript('vendor/pdf-fonts.js?v=1');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'mm', format:'a4'});
+    doc.addFileToVFS('pjs-r.ttf', PURGO_PDF_FONTS.regular); doc.addFont('pjs-r.ttf', 'PJS', 'normal');
+    doc.addFileToVFS('pjs-b.ttf', PURGO_PDF_FONTS.bold); doc.addFont('pjs-b.ttf', 'PJS', 'bold');
+    const NAVY = [19,47,71], WATER = [50,105,134], SOFT = [226,239,247], LINE = [212,228,238], MUTED = [83,112,138];
+    const PW = 210, L = 18, R = PW-18, W = R-L, BOTTOM = 272;
+    let y = 18;
+    const font = (w, size, col) => { doc.setFont('PJS', w); doc.setFontSize(size); doc.setTextColor(...(col||NAVY)); };
+    const footer = () => { const n = doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setDrawColor(...LINE); doc.line(L, 282, R, 282);
+      font('normal', 8.5, MUTED); doc.text('Purgō, family run exterior cleaning  ·  Tel 07930 877034  ·  www.purgo-clean.com', L, 287); doc.text(`Page ${i} of ${n}`, R, 287, {align:'right'}); } };
+    const room = h => { if(y + h > BOTTOM){ doc.addPage(); y = 18; return true; } return false; };
+    // header: logo left, quote details right
+    const logo = await imgData('brand/logo-navy.png');
+    doc.addImage(logo, 'PNG', L, y-4, 22, 24);
+    font('bold', 20); doc.text('Quote', R, y+4, {align:'right'});
+    font('normal', 10, MUTED); doc.text(`Ref ${m.ref}`, R, y+10, {align:'right'}); doc.text(`Date ${m.date}`, R, y+15, {align:'right'}); doc.text('Valid for 30 days', R, y+20, {align:'right'});
+    y += 32;
+    if(m.customer || m.address){
+      font('bold', 8.5, WATER); doc.text('PREPARED FOR', L, y); y += 5;
+      if(m.customer){ font('bold', 11.5); doc.text(m.customer, L, y); y += 5.5; }
+      if(m.address){ font('normal', 10.5); doc.splitTextToSize(m.address, W).forEach(t=>{ doc.text(t, L, y); y += 5; }); }
+      y += 5;
+    }
+    // table
+    const head = () => { doc.setFillColor(...NAVY); doc.rect(L, y, W, 8, 'F'); font('bold', 10, [255,255,255]); doc.text('Item', L+3, y+5.4); doc.text('Price', R-3, y+5.4, {align:'right'}); y += 8; };
+    const row = (label, amt, opts={}) => {
+      font(opts.bold?'bold':'normal', 10.5);
+      const lines = doc.splitTextToSize(label, W-38); const h = Math.max(7.5, lines.length*4.8 + 3);
+      if(room(h)) head();
+      lines.forEach((t,i)=> doc.text(t, opts.right ? R-38 : L+3, y+5 + i*4.8, opts.right?{align:'right'}:undefined));
+      if(amt!=null) doc.text(gbp(amt), R-3, y+5, {align:'right'});
+      doc.setDrawColor(...LINE); doc.line(L, y+h, R, y+h); y += h;
+    };
+    head();
+    m.groups.forEach(g=>{
+      if(room(8 + 7.5*2)) head();
+      doc.setFillColor(...SOFT); doc.rect(L, y, W, 7, 'F'); font('bold', 8.5, WATER); doc.text(g.name.toUpperCase(), L+3, y+4.8, {charSpace:.3}); y += 7;
+      g.lines.forEach(l=> row(l.label, l.amt));
+      row(`${g.name} subtotal`, g.sub, {bold:true, right:true});
+    });
+    if(room(30)) head();
+    y += 1;
+    row('Subtotal', m.sub, {right:true});
+    if(m.vat) row(`VAT ${m.vatRate}%`, m.vat, {right:true});
+    doc.setFillColor(...NAVY); doc.rect(L, y, W, 10, 'F'); font('bold', 12, [255,255,255]);
+    doc.text(`Total${m.vat?'':' (no VAT)'}`, R-38, y+6.6, {align:'right'}); doc.text(gbp(m.total), R-3, y+6.6, {align:'right'}); y += 14;
+    if(m.annual){ font('normal', 10.5); const t = doc.splitTextToSize(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, W); room(t.length*5); t.forEach(s=>{ doc.text(s, L, y); y += 5; }); y += 3; }
+    if(m.notes.length){
+      room(14); font('bold', 8.5, WATER); doc.text('NOTES', L, y, {charSpace:.3}); y += 5.5;
+      font('normal', 10);
+      m.notes.forEach(n=>{ const t = doc.splitTextToSize(n, W-5); if(room(t.length*4.6+1.5)){ font('normal', 10); }
+        doc.text('•', L+0.5, y); t.forEach((s,i)=> doc.text(s, L+5, y + i*4.6)); y += t.length*4.6 + 1.5; });
+    }
+    footer();
+    const who = (m.customer || m.address || '').replace(/[^\w\s-]/g,'').trim().slice(0,40);
+    doc.save(`Purgo quote ${m.ref}${who?' - '+who:''}.pdf`);
+    flash('Quote PDF saved');
+  }catch(e){ flash('Could not make the PDF: ' + (e.message||e)); }
+  btn.disabled = false; btn.textContent = label;
+}
+$('pdfQ').onclick = quotePdf;
 function slug(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80) || 'x'; }
 function flash(t){ const m=$('toast'); m.textContent=t; m.hidden=false; clearTimeout(flash.t); flash.t=setTimeout(()=>m.hidden=true,3500); }
 /* ---------- events ---------- */
@@ -648,7 +731,7 @@ $('newJob').onclick = ()=>{
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
-  rfChems = null; loc = null; makeRef(); renderPw(); renderRfChem(); render();
+  rfChems = null; customNotes = null; loc = null; makeRef(); renderPw(); renderRfChem(); render();
   if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore([]);
 };
 
