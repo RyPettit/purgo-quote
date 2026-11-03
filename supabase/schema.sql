@@ -243,3 +243,7 @@ begin
   end if;
   return new;
 end $$;
+
+-- ============ Customer email ============
+alter table public.quotes add column if not exists email text;
+alter table public.addresses add column if not exists email text;

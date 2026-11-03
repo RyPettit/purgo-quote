@@ -126,7 +126,7 @@ function suggest(input, box, itemsFn){
   box.addEventListener('mousedown', e=>{ const b=e.target.closest('button'); if(!b) return; e.preventDefault(); items[+b.dataset.k].pick(); close(); });
 }
 function pickAddress(a){
-  $('addr').value = a.line||''; $('pc').value = a.postcode||''; $('cust').value = a.customer||''; $('phone').value = a.phone||''; $('jobNotes').value = a.notes||'';
+  $('addr').value = a.line||''; $('pc').value = a.postcode||''; $('cust').value = a.customer||''; $('phone').value = a.phone||''; $('email').value = a.email||''; $('jobNotes').value = a.notes||'';
   resolvePc(); render();
 }
 const PC_LIKE = /^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*(\d[A-Za-z]{0,2})?$/;
@@ -138,7 +138,7 @@ function setPostcode(c, fromAddr){
 suggest($('addr'), $('addrSugg'), q=>{
   const t = q.trim(); if(t.length<2) return [];
   const tl = t.toLowerCase();
-  const saved = addresses.filter(a=>[a.line,a.postcode,a.customer].join(' ').toLowerCase().includes(tl) || (PC_LIKE.test(t) && normPc(a.postcode).startsWith(normPc(t)))).slice(0,6)
+  const saved = addresses.filter(a=>[a.line,a.postcode,a.customer,a.email].join(' ').toLowerCase().includes(tl) || (PC_LIKE.test(t) && normPc(a.postcode).startsWith(normPc(t)))).slice(0,6)
     .map(a=>({label:a.line, sub:`${a.postcode||''}${a.customer?' · '+a.customer:''}${a.lastQuoted?' · last quoted '+new Date(a.lastQuoted).toLocaleDateString('en-GB'):''}`, pick:()=>pickAddress(a)}));
   if(!PC_LIKE.test(t)) return saved;
   return [...saved, ...pcItems(t, $('addr'), true)];
@@ -637,6 +637,7 @@ function restore(s){
   customNotes = Array.isArray(s.notes) ? s.notes.slice() : null;
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
   renderPw(); renderRfChem();
+  $('email').value = '';
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
 }
@@ -771,7 +772,7 @@ $('copyQ').onclick = async ()=>{
   }
 };
 $('newJob').onclick = ()=>{
-  ['cust','addr','pc','phone','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
+  ['cust','addr','pc','phone','email','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
   ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','rfA','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0);
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
@@ -1031,9 +1032,9 @@ window.addEventListener('beforeunload', e=>{ if(ratesDirty && ROLE==='admin'){ e
 async function loadAddresses(){
   addresses = LS.get('purgoAddr', []);
   try{
-    const {data, error} = await sb.from('addresses').select('line,postcode,customer,phone,notes,last_quoted').order('last_quoted', {ascending:false, nullsFirst:false}).limit(3000);
+    const {data, error} = await sb.from('addresses').select('line,postcode,customer,phone,email,notes,last_quoted').order('last_quoted', {ascending:false, nullsFirst:false}).limit(3000);
     if(error) throw error;
-    addresses = data.map(a=>({line:a.line, postcode:a.postcode, customer:a.customer, phone:a.phone, notes:a.notes, lastQuoted:a.last_quoted}));
+    addresses = data.map(a=>({line:a.line, postcode:a.postcode, customer:a.customer, phone:a.phone, email:a.email, notes:a.notes, lastQuoted:a.last_quoted}));
     LS.set('purgoAddr', addresses);
   }catch(e){}
 }
@@ -1042,11 +1043,11 @@ async function loadAddresses(){
 function buildRecord(o, ref){
   const line = $('addr').value.trim(), pc = fmtPc($('pc').value);
   const now = new Date().toISOString();
-  const rec = {ref, customer:$('cust').value.trim(), address:line, postcode:pc, phone:$('phone').value.trim(), job_type:ctype,
+  const rec = {ref, customer:$('cust').value.trim(), address:line, postcode:pc, phone:$('phone').value.trim(), email:$('email').value.trim(), job_type:ctype,
     sub:round2(o.sub), vat:round2(o.vat), total:round2(o.total),
     lines:o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:round2(l.amt)}))})),
     state:snapshot(), created_by_name:ME.name};
-  const addr = {key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:rec.customer, phone:rec.phone, notes:$('jobNotes').value.trim(), lat:loc?loc.lat:null, lng:loc?loc.lng:null, last_quoted:now};
+  const addr = {key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:rec.customer, phone:rec.phone, email:rec.email, notes:$('jobNotes').value.trim(), lat:loc?loc.lat:null, lng:loc?loc.lng:null, last_quoted:now};
   const costs = ROLE==='admin' ? costRecord(o) : null;
   return {rec, addr, costs};
 }
