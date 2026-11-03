@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=b8456a609d">
+<link rel="stylesheet" href="purgo.css?v=7b6b596b8f">
 </head>
 <body>
 <header class="topbar">
@@ -37,6 +37,20 @@
 <!-- LOGIN -->
 <main id="view-login" class="wrap narrow" hidden>
   <section class="card login">
+    <svg class="xmas" id="xmasTree" viewBox="0 0 120 150" aria-hidden="true" hidden>
+      <rect x="53" y="124" width="14" height="16" rx="2" fill="#7a4a2a"/>
+      <path d="M20 132 Q60 140 100 132 L94 140 Q60 147 26 140 Z" fill="#326986"/>
+      <path d="M60 22 L98 72 L80 72 L106 104 L84 104 L110 130 L10 130 L36 104 L14 104 L40 72 L22 72 Z" fill="#1f6b4a"/>
+      <path d="M60 22 L98 72 L80 72 L106 104 L84 104 L110 130 L60 130 Z" fill="#185a3d"/>
+      <path d="M34 80 Q60 92 88 78" fill="none" stroke="#c6e1ef" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M26 112 Q60 126 96 108" fill="none" stroke="#c6e1ef" stroke-width="2.2" stroke-linecap="round"/>
+      <g class="lights">
+        <circle cx="44" cy="84" r="4.2" fill="#f2c14e"/><circle cx="62" cy="88" r="4.2" fill="#6da7c4"/><circle cx="80" cy="82" r="4.2" fill="#e05a47"/>
+        <circle cx="34" cy="113" r="4.2" fill="#6da7c4"/><circle cx="52" cy="119" r="4.2" fill="#e05a47"/><circle cx="70" cy="119" r="4.2" fill="#f2c14e"/><circle cx="88" cy="112" r="4.2" fill="#6da7c4"/>
+        <circle cx="60" cy="56" r="4" fill="#e05a47"/><circle cx="48" cy="66" r="3.6" fill="#f2c14e"/><circle cx="72" cy="64" r="3.6" fill="#6da7c4"/>
+      </g>
+      <path class="star" d="M60 4 L64.7 15.5 L77 16.2 L67.5 24 L70.6 36 L60 29.3 L49.4 36 L52.5 24 L43 16.2 L55.3 15.5 Z" fill="#f2c14e" stroke="#d9a730" stroke-width="1"/>
+    </svg>
     <img class="logo light" src="brand/logo-navy.png" alt="purgō">
     <img class="logo dark" src="brand/logo-light.png" alt="purgō">
     <p class="tagline">Quote builder</p>
@@ -378,7 +392,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=5204e18afe"></script>
+<script src="purgo.js?v=4298a5c17f"></script>
 <script src="measure.js?v=3d1e81201a"></script>
 </body>
 </html>
