@@ -1118,7 +1118,7 @@ function renderQuoteList(){
     const prof = ROLE==='admin' ? (qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : `<small style="display:block;color:var(--muted);font-size:.72rem">open for profit</small>`) : '';
     const status = x.queued ? '<span class="pill queued">Waiting</span>' :
       `<select data-status="${x.id}" aria-label="Status">${['draft','sent','accepted','declined'].map(s=>`<option value="${s}" ${s===x.status?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select>`;
-    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small><small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button></div>`;
+    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small><small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts"><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
   }).join('') : `<p class="hint">${quotesLoading && !quotes.length ? 'Loading saved quotes…' : quotes.length ? 'No quotes match the search or filters above.' : quotesErr ? '' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
   if(quotesErr) $('qList').insertAdjacentHTML('afterbegin', `<p class="note w">${esc(quotesErr)} <button class="btn sm" type="button" onclick="loadQuotes()">Try again</button></p>`);
 }
@@ -1145,6 +1145,33 @@ document.addEventListener('click', async e=>{
   if(ROLE==='admin' && !(data.quote_costs && (Array.isArray(data.quote_costs) ? data.quote_costs.length : true))){
     sb.from('quote_costs').upsert(Object.assign({quote_id:data.id}, costRecord(last||calc()))).then(()=>{});
   }
+});
+
+/* ---------- deleting quotes (admin; anyone can discard their own not-yet-uploaded quote) ---------- */
+// first tap arms the button, second tap within 4 seconds deletes
+document.addEventListener('click', async e=>{
+  const b = e.target.closest('[data-delq],[data-delq-local]'); if(!b) return;
+  if(!b.classList.contains('arm')){
+    document.querySelectorAll('.del.arm').forEach(x=>{ x.classList.remove('arm'); x.textContent = 'Delete'; });
+    b.classList.add('arm'); b.textContent = 'Tap again to delete';
+    clearTimeout(b._t); b._t = setTimeout(()=>{ b.classList.remove('arm'); b.textContent = 'Delete'; }, 4000);
+    return;
+  }
+  clearTimeout(b._t);
+  if(b.dataset.delqLocal){
+    const ref = b.dataset.delqLocal;
+    setOutbox(outbox().filter(x=>x.rec.ref!==ref));
+    if(refStr===ref){ editing = null; syncEditing(); }
+    renderQuoteList(); flash('Quote deleted from this device'); return;
+  }
+  const id = b.dataset.delq, q = quotes.find(x=>x.id===id);
+  b.disabled = true; b.textContent = 'Deleting…';
+  const {error} = await sb.from('quotes').delete().eq('id', id);
+  if(error){ b.disabled = false; b.classList.remove('arm'); b.textContent = 'Delete'; flash('Not deleted: ' + (isNetErr(error)?'no connection':error.message)); return; }
+  quotes = quotes.filter(x=>x.id!==id); LS.set('purgoQuotes', quotes);
+  if(editing && editing.id===id){ editing = null; quoteNo = null; syncEditing(); render(); } // the open quote becomes a new, unsaved one
+  renderQuoteList();
+  flash(`Deleted ${q && q.quote_no ? noLabel(q.quote_no) : 'quote'}${q && q.customer ? ' – '+q.customer : ''}`);
 });
 
 /* ---------- staff admin ---------- */
