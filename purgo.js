@@ -524,7 +524,7 @@ function render(){
 /* ---------- customer quote: table preview, rich copy and plain text ---------- */
 // Notes on the customer quote: the standard ones, unless someone has edited them for this quote
 let customNotes = null; // array of lines when edited, otherwise null
-function standardNotes(o){ const n = [...new Set(o.notes)]; n.push('Quote valid for 30 days.'); return n; }
+function standardNotes(o){ const n = [...new Set(o.notes)]; n.push('Purgō has public liability insurance covering us for up to £2m.'); n.push('Quote valid for 30 days.'); return n; }
 function syncNotesBox(std){
   const box = $('qNotes'); if(!box) return;
   if(customNotes===null && document.activeElement!==box) box.value = std.join('\n');
