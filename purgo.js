@@ -554,6 +554,8 @@ function syncNotesBox(std){
   $('qNotesState').textContent = customNotes===null ? 'Standard notes' : 'Edited for this quote';
   $('qNotesReset').hidden = customNotes===null;
 }
+const ACCEPT_TITLE = 'How to accept this quote';
+const ACCEPT_TEXT = 'Just reply to the email you got this quote from and confirm any services you would like to book. Alternatively, if you would like to discuss any of the quoted work, please contact us on 07930 877034.';
 function quoteModel(o){
   const groups = o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:l.amt})), sub:g.lines.reduce((s,l)=>s+l.amt,0)}));
   const std = standardNotes(o); syncNotesBox(std);
@@ -588,6 +590,7 @@ function quoteHTML(m){
   h += `<tr><td style="padding:10px;text-align:right;font-weight:800;background:#132f47;color:#fff">Total${m.vat?'':' (no VAT)'}</td><td style="padding:10px;${num}font-weight:800;font-size:16px;background:#132f47;color:#fff">${gbp(m.total)}</td></tr>`;
   h += `</tfoot></table>`;
   if(m.annual) h += `<p style="margin:10px 0 0">Price per visit. ${m.annual.visits} visits per year = <b>${gbp(m.annual.total)}</b> a year.</p>`;
+  h += `<div style="margin-top:12px;padding:10px 12px;background:#e2eff7;border-left:4px solid #326986;border-radius:4px"><div style="font-weight:800;margin-bottom:3px">${ACCEPT_TITLE}</div>${esc(ACCEPT_TEXT)}</div>`;
   h += `<div style="margin-top:14px;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#326986">Notes</div><ul style="margin:6px 0 0;padding-left:18px">${m.notes.map(n=>`<li style="margin:3px 0">${esc(n)}</li>`).join('')}</ul>`;
   h += `<p style="margin:14px 0 0;color:#53708a">Purgō, family run exterior cleaning<br>Tel 07930 877034 · www.purgo-clean.com</p></div>`;
   return h;
@@ -600,6 +603,7 @@ function quoteText(m){
   m.groups.forEach(g=>{ L.push(g.name.toUpperCase()); g.lines.forEach(l=>L.push(pad(l.label,l.amt))); L.push(pad(`${g.name} subtotal`, g.sub)); L.push(''); });
   L.push(rule, pad('Subtotal', m.sub)); if(m.vat) L.push(pad(`VAT ${m.vatRate}%`, m.vat)); L.push(pad(m.vat?'TOTAL':'TOTAL (no VAT)', m.total), rule, '');
   if(m.annual) L.push(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, '');
+  L.push(ACCEPT_TITLE.toUpperCase(), ACCEPT_TEXT, '');
   L.push('NOTES'); m.notes.forEach(n=>L.push('- '+n));
   L.push('', 'Purgō, family run exterior cleaning', 'Tel 07930 877034 · www.purgo-clean.com');
   return L.join('\n');
@@ -690,6 +694,9 @@ async function quotePdf(){
     doc.setFillColor(...NAVY); doc.rect(L, y, W, 10, 'F'); font('bold', 12, [255,255,255]);
     doc.text(`Total${m.vat?'':' (no VAT)'}`, R-38, y+6.6, {align:'right'}); doc.text(gbp(m.total), R-3, y+6.6, {align:'right'}); y += 14;
     if(m.annual){ font('normal', 10.5); const t = doc.splitTextToSize(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, W); room(t.length*5); t.forEach(s=>{ doc.text(s, L, y); y += 5; }); y += 3; }
+    { font('normal', 10); const t = doc.splitTextToSize(ACCEPT_TEXT, W-10); const h = 9 + t.length*4.6 + 3; room(h);
+      doc.setFillColor(...SOFT); doc.rect(L, y, W, h, 'F'); doc.setFillColor(...WATER); doc.rect(L, y, 1.4, h, 'F');
+      font('bold', 11); doc.text(ACCEPT_TITLE, L+5, y+6.2); font('normal', 10); t.forEach((s,i)=> doc.text(s, L+5, y+11.5+i*4.6)); y += h + 7; }
     if(m.notes.length){
       room(14); font('bold', 8.5, WATER); doc.text('NOTES', L, y, {charSpace:.3}); y += 5.5;
       font('normal', 10);
