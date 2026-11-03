@@ -225,7 +225,32 @@ function syncSvc(){ document.querySelectorAll('.svc').forEach(s=>{ s.closest('se
 
 /* ---------- calculation ---------- */
 const TASKW = {wSetup:'Set-up & pack-down', wCx:'Access extras', wTower:'Scaffold tower', wPw:'Pressure washing', wGt:'Gutters', wWn:'Windows', wRf:'Roof cleaning'};
+/* ---------- price lock ----------
+   Every save remembers the selling prices used (state.pricedWith). Once a quote is no longer a draft
+   (sent, accepted or declined) it keeps those selling prices; costs (wages, fuel, sand and chemical
+   costs) always use today's figures, so only the profit moves. "Update to current prices" reprices it. */
+let pricing = {status:'draft', snap:null, current:false};
+function priceSnap(){
+  const rates = {};
+  Object.keys(R).forEach(k=>{ if(k!=='chems' && k!=='sandBagSell' && !COST_KEYS.includes(k)) rates[k] = R[k]; });
+  return { at:new Date().toISOString(), rates,
+    sandBagSell: R.sandBagSell!=null ? R.sandBagSell : (R.sandBag||0)*(1+(R.sandMarkup||0)/100),
+    chems: R.chems.map(c=>({id:c.id, name:c.name, cover:c.cover, app:c.app, sell: c.sell!=null ? c.sell : (c.cost||0)*(1+(c.markup||0)/100)})) };
+}
+const isLocked = () => !!pricing.snap && pricing.status!=='draft' && !pricing.current;
+function lockedRates(){
+  const s = pricing.snap, L = Object.assign({}, R, s.rates);
+  L.sandBagSell = s.sandBagSell;
+  L.chems = s.chems.map(c=>{ const now = R.chems.find(x=>x.id===c.id) || {}; return Object.assign({}, now, c, {cost: now.cost||0, markup: now.markup||0}); });
+  R.chems.forEach(c=>{ if(!L.chems.some(x=>x.id===c.id)) L.chems.push(c); });
+  return L;
+}
 function calc(){
+  if(!isLocked()) return calcNow();
+  const keep = R; R = lockedRates();
+  try{ return calcNow(); } finally { R = keep; }
+}
+function calcNow(){
   const crew = Math.max(1, Math.round(num('workers')));
   const L = R.labour;
   const o = {groups:[], tasks:[], rigH:0, setupT:0, crew, cost:{sand:0, chem:0, water:0}, warn:[], notes:[]};
@@ -486,11 +511,13 @@ let quoteNo = null; // running number given by the database when the quote is fi
 const noLabel = n => `${window.PURGO_DEV?'DEV-':''}PQ-${n}`;
 function shortRef(){ return quoteNo ? noLabel(quoteNo) : 'New quote'; }
 function fullRef(){ const c = $('cust').value.trim(); return c ? `${shortRef()} – ${c}` : shortRef(); }
-function makeRef(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); refStr = `${window.PURGO_DEV?'DEV-':''}PQ-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${initials()}`; quoteNo = null; editing = null; syncEditing(); }
+function makeRef(){ pricing = {status:'draft', snap:null, current:false}; const d=new Date(); const p=n=>String(n).padStart(2,'0'); refStr = `${window.PURGO_DEV?'DEV-':''}PQ-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${initials()}`; quoteNo = null; editing = null; syncEditing(); }
 function initials(){ const n = (ME && ME.name) || 'X'; return n.split(/[\s._-]+/).filter(Boolean).map(w=>w[0]).join('').slice(0,3).toUpperCase() || 'X'; }
 let last = null;
 function render(){
+  const today = (isLocked() && ROLE) ? calcNow() : null;   // what today's prices would charge (worked out first so the locked figures are what's left on screen)
   const o = calc(); last = o;
+  renderLock(o, today);
   $('qref').textContent = `${fullRef()} · ${ctype==='com'?'Commercial':'Residential'}`; $('qrefTop').textContent = shortRef();
   $('tTotal').innerHTML = gbp(o.total) + `<small>${$('vatOn').checked?'inc VAT':'no VAT'}</small>`;
   $('tSub').textContent = $('vatOn').checked ? `${gbp(o.sub)} + VAT ${gbp(o.vat)}` : 'VAT not added';
@@ -625,7 +652,7 @@ const FORM_SKIP = /^(r_|ch_|pw_)/;
 function snapshot(){
   const f = {};
   document.querySelectorAll('.col input[id], .col select[id]').forEach(el=>{ if(FORM_SKIP.test(el.id)) return; f[el.id] = el.type==='checkbox' ? el.checked : el.value; });
-  const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfChems:chemList('rf').slice(), ctype};
+  const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfChems:chemList('rf').slice(), ctype, pricedWith: isLocked() ? pricing.snap : priceSnap()};
   if(customNotes!==null) out.notes = customNotes.slice();
   if(window.PURGO_DEV && typeof MEASURE!=='undefined'){ const m = MEASURE.snapshot(); if(m.length) out.measures = m; }
   return out;
@@ -728,6 +755,26 @@ async function quotePdf(){
   btn.disabled = false; btn.textContent = label;
 }
 $('pdfQ').onclick = quotePdf;
+function renderLock(o, today){
+  const bar = $('lockBar'); if(!bar) return;
+  if(!pricing.snap || pricing.status==='draft'){ bar.hidden = true; return; }
+  bar.hidden = false;
+  const when = new Date(pricing.snap.at).toLocaleDateString('en-GB');
+  if(isLocked()){
+    const diff = today && Math.abs(today.total - o.total) >= 0.01;
+    bar.className = 'lockbar';
+    bar.innerHTML = `<b>Prices locked</b> · ${pricing.status[0].toUpperCase()+pricing.status.slice(1)}, priced ${when}.${ROLE==='admin'?' Profit uses today\'s costs.':''}`
+      + (diff ? ` Today's prices would be <b>${gbp(today.total)}</b>.` : ' Today\'s prices give the same total.')
+      + ` <button class="linkbtn" type="button" id="lockUpdate">Update to current prices</button>`;
+  } else {
+    bar.className = 'lockbar cur';
+    bar.innerHTML = `<b>Using today's prices.</b> Press Update quote to keep them, then send the customer the new version. <button class="linkbtn" type="button" id="lockUndo">Keep the ${when} prices</button>`;
+  }
+}
+document.addEventListener('click', e=>{
+  if(e.target.id==='lockUpdate'){ pricing.current = true; render(); flash('Repriced at today\'s prices. Update quote to keep it.'); }
+  else if(e.target.id==='lockUndo'){ pricing.current = false; render(); }
+});
 function slug(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80) || 'x'; }
 function flash(t){ const m=$('toast'); m.textContent=t; m.hidden=false; clearTimeout(flash.t); flash.t=setTimeout(()=>m.hidden=true,3500); }
 /* ---------- events ---------- */
@@ -1074,7 +1121,7 @@ async function saveQuote(asNew){
   try{
     if(!navigator.onLine) throw new Error('offline');
     const saved = await pushQuote(item.rec, item.addr, item.costs);
-    editing = {id:saved.id, ref:refStr}; quoteNo = saved.quote_no; syncEditing(); render();
+    editing = {id:saved.id, ref:refStr}; quoteNo = saved.quote_no; pricing.snap = item.rec.state.pricedWith; pricing.current = false; syncEditing(); render();
     flash(`Saved ${fullRef()}`);
     loadAddresses();
   }catch(e){
@@ -1130,20 +1177,30 @@ document.addEventListener('change', async e=>{
   const {error} = await sb.from('quotes').update({status:e.target.value}).eq('id', id);
   if(error){ flash('Status not changed: ' + (isNetErr(error)?'no connection':error.message)); loadQuotes(); return; }
   const q = quotes.find(x=>x.id===id); if(q) q.status = e.target.value;
+  if(editing && editing.id===id){ pricing.status = e.target.value; render(); }
+  // a quote sent before prices were remembered: remember today's prices now so it stays fixed from here on
+  if(e.target.value!=='draft'){
+    const r = await sb.from('quotes').select('state').eq('id', id).maybeSingle();
+    if(r.data && r.data.state && !r.data.state.pricedWith){
+      await sb.from('quotes').update({state:Object.assign({}, r.data.state, {pricedWith:priceSnap()})}).eq('id', id);
+      if(editing && editing.id===id){ pricing.snap = priceSnap(); render(); }
+    }
+  }
 });
 document.addEventListener('click', async e=>{
   const b = e.target.closest('[data-openq],[data-openq-local]'); if(!b) return;
   if(b.dataset.openqLocal){
     const it = outbox().find(x=>x.rec.ref===b.dataset.openqLocal); if(!it) return;
-    refStr = it.rec.ref; quoteNo = null; restore(it.rec.state); editing = null; syncEditing(); show('quote'); return;
+    refStr = it.rec.ref; quoteNo = null; pricing = {status:'draft', snap:it.rec.state.pricedWith||null, current:false}; restore(it.rec.state); editing = null; syncEditing(); show('quote'); return;
   }
   b.disabled = true;
-  const {data, error} = await sb.from('quotes').select('id,ref,quote_no,state,quote_costs(quote_id)').eq('id', b.dataset.openq).maybeSingle();
+  const {data, error} = await sb.from('quotes').select('id,ref,quote_no,status,state,quote_costs(quote_id)').eq('id', b.dataset.openq).maybeSingle();
   b.disabled = false;
   if(error || !data){ flash('Could not open: ' + (error ? (isNetErr(error)?'no connection':error.message) : 'quote not found')); return; }
-  refStr = data.ref; quoteNo = data.quote_no; restore(data.state); editing = {id:data.id, ref:data.ref}; syncEditing();
+  refStr = data.ref; quoteNo = data.quote_no; pricing = {status:data.status||'draft', snap:(data.state&&data.state.pricedWith)||null, current:false}; restore(data.state); editing = {id:data.id, ref:data.ref}; syncEditing();
   show('quote'); flash(`Opened ${fullRef()}`);
-  if(ROLE==='admin' && !(data.quote_costs && (Array.isArray(data.quote_costs) ? data.quote_costs.length : true))){
+  // admin: refresh the profit with today's costs (a locked quote's price doesn't change)
+  if(ROLE==='admin' && (isLocked() || !(data.quote_costs && (Array.isArray(data.quote_costs) ? data.quote_costs.length : true)))){
     sb.from('quote_costs').upsert(Object.assign({quote_id:data.id}, costRecord(last||calc()))).then(()=>{});
   }
 });
