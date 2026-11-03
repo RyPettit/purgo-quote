@@ -663,6 +663,9 @@ const LS = {
 };
 let editing = null; // {id, ref} of the saved quote currently open
 const round2 = n => Math.round((+n||0)*100)/100;
+// Christmas tree on the sign-in screen, 1 November to 6 January (Twelfth Night) every year
+(function(){ const d = new Date(), m = d.getMonth(), day = d.getDate(); const t = document.getElementById('xmasTree');
+  if(t && (m===10 || m===11 || (m===0 && day<=6))) t.removeAttribute('hidden'); })();
 const VIEWS = ['login','quote','quotes','admin'];
 const isNetErr = e => !navigator.onLine || /fetch|network|Failed to fetch|Load failed/i.test(String(e && (e.message||e)));
 
