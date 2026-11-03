@@ -154,6 +154,9 @@ body:not(.is-admin) .admin-only{display:none!important}
 .qitem{grid-template-columns:minmax(0,1fr) auto auto auto}
 .qitem select{width:auto;padding:4px 6px;font-size:.82rem}
 .qacts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.lockbar{margin:8px 0 4px;padding:8px 10px;border-radius:8px;font-size:.8rem;line-height:1.45;background:rgba(242,193,78,.18);color:inherit;border:1px solid rgba(242,193,78,.55)}
+.lockbar.cur{background:rgba(109,167,196,.18);border-color:rgba(109,167,196,.55)}
+.lockbar .linkbtn{color:inherit;font-weight:700}
 .btn.del{color:var(--bad);border-color:var(--bad-bg)}
 .btn.del.arm{background:var(--bad);color:#fff;border-color:var(--bad)}
 .pill{display:inline-block;font-size:.72rem;font-weight:700;border-radius:20px;padding:2px 8px;text-transform:uppercase;letter-spacing:.04em}
