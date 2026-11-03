@@ -295,7 +295,7 @@ function calc(){
       o.setupT += R.gutSetup;
       bill(g, 'Set-up & pack-down', R.gutSetup, wSet, true);
       d += m/(st>=3?R.gutSpeed3:R.gutSpeed);
-      o.notes.push('Gutter price covers a camera survey and full clear only. Any repairs we find will be photographed and quoted separately before any work goes ahead.');
+      o.notes.push('Gutter price covers a camera survey and full clear only. We can make any necessary repairs that we find. However, these will be photographed and quoted for before work is carried out.');
     }
     const gq = num('gtGuard'); if(gq){ line(g, `Downpipe guards × ${gq}`, gq*R.guard, `${gq} × ${gbp(R.guard)}`); d += gq*0.05; }
     const fm = num('gtFas'); if(fm){ line(g, `Fascia & soffit clean (${fm} m)`, fm*R.fascia, `${fm} m × ${gbp(R.fascia)}`); d += fm/R.fasSpeed; }
@@ -533,8 +533,9 @@ function standardNotes(o){
   if(pw){
     n.push('Cleaning can reveal damage already there, such as cracked slabs, loose blocks or failing joints. We will point out anything we find, but we cannot be responsible for it.');
     if(rows.some(r=>r.sand)) n.push('Joints are re-sanded with kiln-dried sand. A light top-up may be needed once it settles after rain.');
-    n.push('We will need access to an outside tap. Please tell us in advance if there is not one.');
   }
+  // water is needed for washing, gutter flushing and low pressure roof washing (not a scrape-only roof)
+  if(pw || has('Gutters') || (roof && $('rfM').value!=='scrape')) n.push('We will need access to an outside tap. Please tell us in advance if there is not one.');
   if(chem) n.push('Treatments keep working after we leave. Moss, algae and black spot can take 6 to 12 weeks to fade fully.');
   if(roof) n.push('We do not repair or replace tiles. Any broken or slipped tiles we find will be photographed and reported to you.');
   if(has('Windows')) n.push('We clean with purified water, so windows can look wet when we leave. They dry spot-free.');
