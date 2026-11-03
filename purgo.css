@@ -166,6 +166,17 @@ body:not(.is-admin) .admin-only{display:none!important}
 .login{text-align:center}
 .login form{text-align:left}
 .login .logo{display:block;margin:4px auto 22px;width:150px;height:auto}
+/* seasonal: Christmas tree on the sign-in card (shown 1 Nov to 6 Jan) */
+.login{position:relative}
+.xmas{position:absolute;top:-34px;right:-18px;width:86px;height:auto;filter:drop-shadow(0 4px 6px rgba(19,47,71,.18));pointer-events:none}
+@media (max-width:520px){.xmas{width:64px;top:-26px;right:-6px}}
+.xmas .lights circle{animation:twinkle 2.4s ease-in-out infinite}
+.xmas .lights circle:nth-child(3n+1){animation-delay:.8s}
+.xmas .lights circle:nth-child(3n+2){animation-delay:1.6s}
+.xmas .star{transform-origin:60px 20px;animation:glow 3s ease-in-out infinite}
+@keyframes twinkle{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes glow{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@media (prefers-reduced-motion: reduce){.xmas .lights circle,.xmas .star{animation:none}}
 .login .logo.dark{display:none}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .login .logo.light{display:none}:root:not([data-theme="light"]) .login .logo.dark{display:block}}
 :root[data-theme="dark"] .login .logo.light{display:none}
