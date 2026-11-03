@@ -524,7 +524,29 @@ function render(){
 /* ---------- customer quote: table preview, rich copy and plain text ---------- */
 // Notes on the customer quote: the standard ones, unless someone has edited them for this quote
 let customNotes = null; // array of lines when edited, otherwise null
-function standardNotes(o){ const n = [...new Set(o.notes)]; n.push('Purgō has public liability insurance covering us for up to £2m.'); n.push('Quote valid for 30 days.'); return n; }
+function standardNotes(o){
+  const n = [...new Set(o.notes)];
+  const has = name => o.groups.some(g=>g.name===name && g.lines.length);
+  const pw = has('Pressure washing'), roof = has('Roof cleaning');
+  const rows = pw ? pwRows.filter(r=>+r.sqm>0) : [];
+  const chem = rows.some(r=>normRow(r).chems.length) || (roof && chemList('rf').length>0);
+  if(pw){
+    n.push('Cleaning can reveal damage already there, such as cracked slabs, loose blocks or failing joints. We will point out anything we find, but we cannot be responsible for it.');
+    if(rows.some(r=>r.sand)) n.push('Joints are re-sanded with kiln-dried sand. A light top-up may be needed once it settles after rain.');
+    n.push('We will need access to an outside tap. Please tell us in advance if there is not one.');
+  }
+  if(chem) n.push('Treatments keep working after we leave. Moss, algae and black spot can take 6 to 12 weeks to fade fully.');
+  if(roof) n.push('We do not repair or replace tiles. Any broken or slipped tiles we find will be photographed and reported to you.');
+  if(has('Windows')) n.push('We clean with purified water, so windows can look wet when we leave. They dry spot-free.');
+  if(ctype==='com') n.push('Risk assessments and method statements (RAMS) are available on request.');
+  n.push('Please move vehicles, plant pots and garden furniture from the areas being cleaned, and keep pets indoors while we work.');
+  n.push('Work is weather dependent. We will rebook at no cost if rain or frost stops us.');
+  n.push('Payment is due on completion by bank transfer.');
+  n.push('Please give us 48 hours\' notice if you need to rebook.');
+  n.push('Purgō has public liability insurance covering us for up to £2m.');
+  n.push('Quote valid for 30 days.');
+  return n;
+}
 function syncNotesBox(std){
   const box = $('qNotes'); if(!box) return;
   if(customNotes===null && document.activeElement!==box) box.value = std.join('\n');
