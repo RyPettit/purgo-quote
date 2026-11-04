@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=781b42260b">
+<link rel="stylesheet" href="purgo.css?v=52aa4af92b">
 </head>
 <body>
 <header class="topbar">
@@ -267,6 +267,11 @@
 <main id="view-quotes" class="wrap" hidden>
   <div class="viewbar"><div><h2 class="vtitle">Saved quotes</h2><p class="sub" id="qSub"></p></div>
     <div class="vb-actions"><button class="btn" type="button" id="qRefresh">Refresh</button></div></div>
+  <section class="card fu-card" id="fuCard" hidden>
+    <h2>Follow up today</h2>
+    <p class="hint">Quotes marked Sent that are due a chase. After you've spoken to them, press Followed up and the next reminder is set.</p>
+    <div id="fuList"></div>
+  </section>
   <section class="card">
     <div class="fields">
       <label class="f wide">Search<input id="qSearch" type="search" placeholder="Customer, address, postcode or quote ref"></label>
@@ -316,6 +321,6 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=a8b518ce3e"></script>
+<script src="purgo.js?v=c9afa24376"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 
 const DEF = {
-  labour:30, labourPaid:20, targetMargin:35,
+  labour:30, labourPaid:20, targetMargin:35, fuFirst:3, fuAgain:7,
   pwRate:3, heavySoil:1.00, pwSetup:0, pwSetupTime:0.33, pwMin:90,
   sf_block:55, sf_concrete:70, sf_tarmac:55, sf_stone:40, sf_imprint:60, sf_porcelain:65, sf_deck:35,
   sandBag:5.49, sandCover:10, sandRate:80, sandMarkup:20,
@@ -21,6 +21,7 @@ const DEF = {
   ]
 };
 const RATE_GROUPS = [
+  ['Follow-ups',[['fuFirst','First follow-up, days after sending'],['fuAgain','Then follow up again every (days)']]],
   ['Labour & margin',[['labour','Ancillary labour charged £/hr per worker'],['labourPaid','Labour paid £/hr per worker'],['targetMargin','Target margin %'],['dayHours','Working day (hours)'],['minRes','Minimum charge, residential £'],['minCom','Minimum charge, commercial £'],['vat','VAT %']]],
   ['Travel & fuel',[['freeMiles','Free travel radius (miles)'],['perMile','Travel charge £/mile beyond radius'],['roadFactor','Road distance factor'],['avgMph','Average travel speed mph'],['vanMpg','Van mpg (Transit Custom)'],['rigLph','Pressure washer petrol L/hr']]],
   ['Pressure washing',[['pwRate','Wash & slurry £/m²'],['heavySoil','Heavy soiling uplift £/m²'],['pwMin','Pressure washing minimum £'],['pwSetupTime','Set-up & pack-down time (h, not billed)'],['sf_block','Block paving m²/hr'],['sf_concrete','Concrete m²/hr'],['sf_tarmac','Tarmac m²/hr'],['sf_stone','Natural stone m²/hr'],['sf_imprint','Imprinted concrete m²/hr'],['sf_porcelain','Porcelain m²/hr'],['sf_deck','Decking m²/hr']]],
@@ -986,6 +987,7 @@ async function enter(user){
   loadAddresses();
   updateNet(); flushOutbox();
   makeRef();
+  setTimeout(()=>checkFollowUps(true), 1500);
   const v = location.hash.slice(1);
   show(VIEWS.includes(v) && v!=='login' ? v : 'quote');
   render();
@@ -1137,13 +1139,14 @@ async function loadQuotes(){
   quotesLoading = true; renderQuoteList();
   if(!sb || !navigator.onLine){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); renderQuoteList(); return; }
   try{
-    const sel = 'id,ref,quote_no,status,customer,address,postcode,total,created_at,created_by,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
+    const sel = 'id,ref,quote_no,status,customer,address,postcode,phone,email,total,created_at,created_by,created_by_name,sent_at,follow_up_at,follow_up_count,last_follow_up' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
     const {data, error} = await sb.from('quotes').select(sel).order('created_at', {ascending:false}).limit(500);
     if(error) throw error;
     quotes = data; quotesLoaded = true; LS.set('purgoQuotes', quotes);
     quotesErr = '';
   }catch(e){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); quotesErr = isNetErr(e) ? 'Could not reach the server, so this is the copy saved on this device.' : ('Could not load saved quotes: ' + (e.message||e)); }
   quotesLoading = false;
+  renderFollowUps();
   const by = $('qBy'), cur = by.value;
   const names = [...new Set(quotes.map(q=>q.created_by_name).filter(Boolean))].sort();
   by.innerHTML = '<option value="">Anyone</option>' + names.map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('');
@@ -1161,7 +1164,7 @@ function renderQuoteList(){
     const prof = ROLE==='admin' ? (qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : `<small style="display:block;color:var(--muted);font-size:.72rem">open for profit</small>`) : '';
     const status = x.queued ? '<span class="pill queued">Waiting</span>' :
       `<select data-status="${x.id}" aria-label="Status">${['draft','sent','accepted','declined'].map(s=>`<option value="${s}" ${s===x.status?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select>`;
-    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small><small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts"><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
+    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small>${x.status==='sent' && x.follow_up_at ? `<small class="fu-next">${new Date(x.follow_up_at)<=new Date() ? 'Follow-up due' : 'Follow up '+fmtDay(x.follow_up_at)}${x.follow_up_count?` · followed up ${x.follow_up_count}×`:''}</small>` : ''}<small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts"><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
   }).join('') : `<p class="hint">${quotesLoading && !quotes.length ? 'Loading saved quotes…' : quotes.length ? 'No quotes match the search or filters above.' : quotesErr ? '' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
   if(quotesErr) $('qList').insertAdjacentHTML('afterbegin', `<p class="note w">${esc(quotesErr)} <button class="btn sm" type="button" onclick="loadQuotes()">Try again</button></p>`);
 }
@@ -1169,9 +1172,14 @@ function renderQuoteList(){
 $('qRefresh').onclick = loadQuotes;
 document.addEventListener('change', async e=>{
   const id = e.target.dataset && e.target.dataset.status; if(!id) return;
-  const {error} = await sb.from('quotes').update({status:e.target.value}).eq('id', id);
+  const q0 = quotes.find(x=>x.id===id) || {}, st = e.target.value, upd = {status:st};
+  if(st==='sent'){ if(!q0.sent_at) upd.sent_at = new Date().toISOString(); if(!q0.follow_up_at) upd.follow_up_at = addDays(R.fuFirst||3); }
+  else upd.follow_up_at = null;   // accepted, declined or back to draft: no more reminders
+  const {error} = await sb.from('quotes').update(upd).eq('id', id);
   if(error){ flash('Status not changed: ' + (isNetErr(error)?'no connection':error.message)); loadQuotes(); return; }
-  const q = quotes.find(x=>x.id===id); if(q) q.status = e.target.value;
+  const q = quotes.find(x=>x.id===id); if(q){ Object.assign(q, upd); LS.set('purgoQuotes', quotes); }
+  renderFollowUps(); renderQuoteList();
+  if(st==='sent' && upd.follow_up_at) flash(`Follow-up reminder set for ${fmtDay(upd.follow_up_at)}`);
   if(editing && editing.id===id){ pricing.status = e.target.value; render(); }
   // a quote sent before prices were remembered: remember today's prices now so it stays fixed from here on
   if(e.target.value!=='draft'){
@@ -1199,6 +1207,53 @@ document.addEventListener('click', async e=>{
     sb.from('quote_costs').upsert(Object.assign({quote_id:data.id}, costRecord(last||calc()))).then(()=>{});
   }
 });
+
+/* ---------- follow-up reminders ----------
+   Marking a quote Sent sets a follow-up date. Due quotes show at the top of Saved quotes and as a
+   count on the menu; "Followed up" sets the next date, Snooze moves it on, Stop ends the reminders. */
+const DAY = 864e5;
+function addDays(n, from){ return new Date((from ? new Date(from).getTime() : Date.now()) + (+n||0)*DAY).toISOString(); }
+function fmtDay(iso){ const d = new Date(iso), t = new Date(); t.setHours(0,0,0,0); const dd = new Date(d); dd.setHours(0,0,0,0);
+  const diff = Math.round((dd - t)/DAY);
+  return diff===0 ? 'today' : diff===1 ? 'tomorrow' : diff===-1 ? 'yesterday' : diff<0 ? `${-diff} days ago` : d.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'}); }
+const dueQuotes = () => quotes.filter(q=>q.status==='sent' && q.follow_up_at && new Date(q.follow_up_at) <= new Date()).sort((a,b)=>new Date(a.follow_up_at)-new Date(b.follow_up_at));
+function renderFollowUps(){
+  const due = dueQuotes();
+  const nav = document.querySelector('.nav button[data-view="quotes"]');
+  if(nav) nav.innerHTML = 'Saved quotes' + (due.length ? ` <span class="fu-badge" title="${due.length} to follow up">${due.length}</span>` : '');
+  const card = $('fuCard'); if(!card) return;
+  card.hidden = !due.length;
+  if(!due.length) return;
+  $('fuList').innerHTML = due.map(q=>{
+    const sent = q.sent_at ? `sent ${fmtDay(q.sent_at)}` : 'sent';
+    const done = q.follow_up_count ? ` · followed up ${q.follow_up_count}× (last ${fmtDay(q.last_follow_up)})` : '';
+    const subj = encodeURIComponent(`Your Purgō quote ${q.quote_no ? noLabel(q.quote_no) : ''}`.trim());
+    return `<div class="fu-item"><div class="m"><b>${esc(q.customer||q.address||'Customer')}</b><small>${q.quote_no?noLabel(q.quote_no)+' · ':''}${gbp(q.total||0)} · ${sent}${done} · due ${fmtDay(q.follow_up_at)}</small></div>
+      <div class="fu-acts">${q.phone?`<a class="btn sm" href="tel:${esc(q.phone.replace(/[^\d+]/g,''))}">Call</a>`:''}${q.email?`<a class="btn sm" href="mailto:${esc(q.email)}?subject=${subj}">Email</a>`:''}
+      <button class="btn sm pri" type="button" data-fu="done" data-id="${q.id}">Followed up</button><button class="btn sm" type="button" data-fu="snooze" data-id="${q.id}">Snooze 2 days</button><button class="btn sm" type="button" data-fu="stop" data-id="${q.id}">Stop</button></div></div>`;
+  }).join('');
+}
+document.addEventListener('click', async e=>{
+  const b = e.target.closest('[data-fu]'); if(!b) return;
+  const q = quotes.find(x=>x.id===b.dataset.id); if(!q) return;
+  const now = new Date().toISOString(), act = b.dataset.fu;
+  const upd = act==='done' ? {follow_up_count:(q.follow_up_count||0)+1, last_follow_up:now, follow_up_at:addDays(R.fuAgain||7)}
+            : act==='snooze' ? {follow_up_at:addDays(2)} : {follow_up_at:null};
+  b.disabled = true;
+  const {error} = await sb.from('quotes').update(upd).eq('id', q.id);
+  if(error){ b.disabled = false; flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return; }
+  Object.assign(q, upd); LS.set('purgoQuotes', quotes);
+  renderFollowUps(); renderQuoteList();
+  flash(act==='done' ? `Next follow-up ${fmtDay(upd.follow_up_at)}` : act==='snooze' ? `Snoozed until ${fmtDay(upd.follow_up_at)}` : 'Reminders stopped for this quote');
+});
+// check on sign-in and whenever the app comes back to the front
+async function checkFollowUps(announce){
+  if(!sb || !ME || !navigator.onLine) return;
+  await loadQuotes();
+  const n = dueQuotes().length;
+  if(announce && n) flash(`${n} quote${n>1?'s':''} to follow up. See Saved quotes.`);
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && ME) checkFollowUps(false); });
 
 /* ---------- deleting quotes (admin; anyone can discard their own not-yet-uploaded quote) ---------- */
 // first tap arms the button, second tap within 4 seconds deletes

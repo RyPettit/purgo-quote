@@ -247,3 +247,10 @@ end $$;
 -- ============ Customer email ============
 alter table public.quotes add column if not exists email text;
 alter table public.addresses add column if not exists email text;
+
+-- ============ Follow-up reminders ============
+alter table public.quotes add column if not exists sent_at timestamptz;
+alter table public.quotes add column if not exists follow_up_at timestamptz;
+alter table public.quotes add column if not exists follow_up_count int not null default 0;
+alter table public.quotes add column if not exists last_follow_up timestamptz;
+create index if not exists quotes_follow_up_idx on public.quotes (follow_up_at) where follow_up_at is not null;
