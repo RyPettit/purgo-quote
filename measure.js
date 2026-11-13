@@ -210,7 +210,7 @@ const MEASURE = (()=>{
       if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
       if(data.error) throw new Error(data.error);
       if(kind!=='patio') shapes.filter(s=>s.kind===kind && s.source==='ai').forEach(s=>removeShape(s.id));
-      (data.shapes||[]).forEach(sh=> addShape({label:sh.label, type: kind==='gutters' ? 'line' : sh.type, path: sh.points.map(p=>({lat:p[0], lng:p[1]})), source:'ai', pitch: kind==='roof' ? guessPitch(data.suggestions) : null}));
+      (data.shapes||[]).forEach(sh=> addShape({label:sh.label, type: kind==='gutters' ? 'line' : sh.type, path: sh.points.map(p=>({lat:p[0], lng:p[1]})), source:'ai', pitch: kind==='roof' ? (PITCH.some(p=>p.v===sh.pitch) ? sh.pitch : guessPitch(sh.covering ? sh : data.suggestions)) : null}));
       suggestions = data.suggestions || null; lastNotes = data.notes || '';
       if(!(data.shapes||[]).length) status('The AI could not find it. Move the map so the property is under the cross, zoom in, and try again, or draw it by hand.', 'w');
       else status(`AI outline added (${data.confidence||'unknown'} confidence). Drag the white dots to correct it.${kind==='patio' ? ' To add another area, move the cross onto it and press AI outline again.' : ''}`, data.confidence==='low' ? 'w' : '');
@@ -218,7 +218,8 @@ const MEASURE = (()=>{
     }catch(e){ status('AI outline failed: ' + (e.message||e), 'b'); }
     btn.disabled = false; btn.textContent = 'AI outline';
   }
-  function guessPitch(s){ const c = s && s.roof_covering; return c==='flat' ? 'flat' : c==='slate' ? 'steep' : 'std'; }
+  // fallback when the AI gives no pitch for a section: flat coverings are flat, everything else standard
+  function guessPitch(s){ const c = s && (s.covering || s.roof_covering); return c==='flat' ? 'flat' : 'std'; }
 
   async function find(){
     const q = el('mAddr').value.trim();
@@ -256,7 +257,8 @@ const MEASURE = (()=>{
       $('on-pw').checked = true; renderPw();
     } else if(kind==='roof'){
       $('rfA').value = Math.round(tot);
-      const p = pitchOf(mine[0]); $('rfP').value = p.rf;
+      // the quote's pitch uplift follows the biggest roof section (flat extensions don't make the house steep)
+      const big = mine.slice().sort((a,b)=>shownValue(b).n - shownValue(a).n)[0]; const p = pitchOf(big); $('rfP').value = p.rf;
       if(suggestions && ['concrete','clay','slate','flat','other'].includes(suggestions.roof_covering)) $('rfT').value = suggestions.roof_covering;
       if(suggestions && ['light','moderate','heavy'].includes(suggestions.moss)) $('rfMoss').value = suggestions.moss;
       $('on-rf').checked = true;

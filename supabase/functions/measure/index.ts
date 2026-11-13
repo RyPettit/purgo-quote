@@ -85,6 +85,13 @@ Rules:
 - If something is hidden by trees or shadow, follow the most likely edge and say so in notes.
 - If you cannot find the target at all, return no shapes and explain in notes.
 - Also give your best read of the surface type, soiling level, moss level and roof covering where visible, using "unknown" when you cannot tell.
+${kind === "roof" ? `
+Roof pitch, judged separately for EACH shape (do not give every section the main roof's pitch):
+- "flat": no ridge or hips, one even surface; felt, EPDM rubber, GRP fibreglass, asphalt or gravel; often with rooflights, a parapet or upstand around the edge, a gutter or outlet at one side; typical of garages, dormers, single-storey extensions and garden rooms. If a section shows no ridge line and has a uniform membrane look, call it flat.
+- "low" (about 15 to 25 degrees): a shallow lean-to or mono-pitch with a slight slope, e.g. a conservatory or porch roof.
+- "std" (about 30 to 40 degrees): most UK house roofs with a visible ridge and tile or slate texture.
+- "steep" (about 45 degrees) and "vsteep" (55 degrees or more): only with clear signs such as very narrow-looking slopes for the building width, tall gables or mansard faces.
+Also give each shape its own covering.` : ""}
 Return your answer only by calling the report_outline tool.`;
 }
 
@@ -102,6 +109,8 @@ const TOOL = {
             label: { type: "string" },
             type: { type: "string", enum: ["area", "line"] },
             points: { type: "array", items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 }, minItems: 2 },
+            pitch: { type: "string", enum: ["flat", "low", "std", "steep", "vsteep"] },
+            covering: { type: "string", enum: ["concrete", "clay", "slate", "flat", "other", "unknown"] },
           },
           required: ["label", "type", "points"],
         },
@@ -199,13 +208,15 @@ function toBase64(buf: ArrayBuffer) {
 }
 
 export function toShapes(input: any, lat: number, lng: number, zoom: number) {
-  const out: { label: string; type: "area" | "line"; points: [number, number][] }[] = [];
+  const out: { label: string; type: "area" | "line"; points: [number, number][]; pitch?: string; covering?: string }[] = [];
+  const PITCHES = ["flat", "low", "std", "steep", "vsteep"];
   for (const s of input?.shapes ?? []) {
     const pts = (s.points ?? []).filter((p: any) => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]))
       .map((p: number[]) => [Math.min(PX, Math.max(0, p[0])), Math.min(PX, Math.max(0, p[1]))]);
     const type = s.type === "line" ? "line" : "area";
     if (pts.length < (type === "line" ? 2 : 3)) continue;
-    out.push({ label: String(s.label || (type === "line" ? "Gutter run" : "Area")).slice(0, 60), type, points: pts.map((p: number[]) => pxToLatLng(p[0], p[1], lat, lng, zoom)) });
+    out.push({ label: String(s.label || (type === "line" ? "Gutter run" : "Area")).slice(0, 60), type, points: pts.map((p: number[]) => pxToLatLng(p[0], p[1], lat, lng, zoom)),
+      pitch: PITCHES.includes(s.pitch) ? s.pitch : (s.covering === "flat" ? "flat" : undefined), covering: s.covering });
   }
   return out;
 }
