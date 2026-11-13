@@ -69,6 +69,12 @@ function markRatesDirty(){
 
 let ctype = 'res';
 let rfChems = null; // roof chemical treatments (null = not chosen yet, defaults to the usual roof biocide)
+// Roof sections: each priced on its own line (name, roof area, pitch, covering, method)
+const RF_PITCH = {flat:'Flat', low:'Low', std:'Standard', steep:'Steep'};
+const RF_COVER = {concrete:'Concrete tile', clay:'Clay tile', slate:'Slate', flat:'Flat / felt / membrane', other:'Other'};
+const RF_METHOD = {scrape:'Scrape & moss removal', lpw:'Low pressure wash', both:'Scrape + low pressure wash'};
+const newRf = (n) => ({name: n===1 ? 'Main roof' : 'Roof section '+n, sqm:0, pitch:'std', cover:'concrete', method:'scrape'});
+let rfRows = [Object.assign(newRf(1), {sqm:70})];
 let pwRows = [{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
 
 /* ---------- postcode data ---------- */
@@ -208,6 +214,17 @@ function chemPicker(key, label){
 }
 function renderRfChem(){ const b = $('rfChemBox'); if(b) b.outerHTML = chemPicker('rf', 'Chemical treatments').replace('<div class="f chemf">', '<div class="f chemf" id="rfChemBox">'); }
 function refreshChemSelects(){ renderPw(); }
+function renderRf(){
+  const box = $('rfRows'); if(!box) return;
+  const opts = (map, cur) => Object.entries(map).map(([k,v])=>`<option value="${k}" ${k===cur?'selected':''}>${v}</option>`).join('');
+  box.innerHTML = rfRows.map((r,i)=>`<div class="arow">
+    <label class="f">Section<input id="rf_n_${i}" data-ri="${i}" data-rf="name" value="${esc(r.name)}"></label>
+    <label class="f">Roof area (m²)<input id="rf_q_${i}" type="number" min="0" data-ri="${i}" data-rf="sqm" value="${r.sqm}"></label>
+    <label class="f">Pitch<select id="rf_p_${i}" data-ri="${i}" data-rf="pitch">${opts(RF_PITCH, r.pitch)}</select></label>
+    <label class="f">Covering<select id="rf_c_${i}" data-ri="${i}" data-rf="cover">${opts(RF_COVER, r.cover)}</select></label>
+    <label class="f">Method<select id="rf_m_${i}" data-ri="${i}" data-rf="method">${opts(RF_METHOD, r.method)}</select></label>
+    ${rfRows.length>1 ? `<button class="btn sm rm" type="button" data-rmrf="${i}">Remove</button>` : ''}</div>`).join('') || '<p class="hint">No roof sections yet.</p>';
+}
 function renderPw(){
   $('pwRows').innerHTML = pwRows.map((r,i)=>`<div class="arow">
     <label class="f">Area<input id="pw_n_${i}" data-i="${i}" data-f="name" value="${esc(r.name)}"></label>
@@ -363,16 +380,25 @@ function calcNow(){
   const rfW = [];
   if($('on-rf').checked){
     const g = grp('Roof cleaning');
-    const a = num('rfA'), m = $('rfM').value, ty = $('rfT').value, st = +$('rfSt').value;
-    const pitch = $('rfP').value, moss = $('rfMoss').value;
+    const st = +$('rfSt').value, moss = $('rfMoss').value;
+    const secs = rfRows.filter(r=>+r.sqm>0), a = secs.reduce((x,r)=>x+(+r.sqm),0);
+    const one = secs.length===1;
     if(a){
       const w = want('wRf', crew);
-      let t = 0, price = 0; const rls = [];
-      if(m!=='lpw'){ rls.push(line(g, `Roof scrape & moss removal (${a} m²)`, a*R.scrape, `${a} m² × ${gbp(R.scrape)}`)); price += a*R.scrape; t += a/(R.scrapeRate*w); }
-      if(m!=='scrape'){ rls.push(line(g, `Roof low pressure wash (${a} m²)`, a*R.lpw, `${a} m² × ${gbp(R.lpw)} · 8" surface cleaner`)); price += a*R.lpw; const lt = a/R.lpwRate; t += lt; o.rigH += lt; }
-      const up = (pitch==='steep'?R.steepUp:0) + (moss==='moderate'?R.mossModUp:moss==='heavy'?R.mossHeavyUp:0);
-      if(up) hide(line(g, `${pitch==='steep'?'Steep pitch':''}${pitch==='steep'&&moss!=='light'?' + ':''}${moss!=='light'?moss+' moss':''} uplift`, price*up/100, `+${up}% on roof price`), rls, 'pitch/moss uplift');
-      t *= (pitch==='steep'?1.3:1) * ({light:1,moderate:1.2,heavy:1.45}[moss]);
+      let t = 0; const rls = [];
+      secs.forEach(r=>{
+        const sa = +r.sqm, m = r.method, pitch = r.pitch, solo = one && r.name==='Main roof', nm = solo ? 'Roof' : r.name;
+        const lab = what => solo ? `Roof ${what}` : `${nm}: ${what}`;   // a single roof keeps its original wording
+        let st0 = 0, price = 0; const own = [];
+        if(m!=='lpw'){ own.push(line(g, lab(`scrape & moss removal (${sa} m²)`), sa*R.scrape, `${sa} m² × ${gbp(R.scrape)}`)); price += sa*R.scrape; st0 += sa/(R.scrapeRate*w); }
+        if(m!=='scrape'){ own.push(line(g, lab(`low pressure wash (${sa} m²)`), sa*R.lpw, `${sa} m² × ${gbp(R.lpw)} · 8" surface cleaner`)); price += sa*R.lpw; const lt = sa/R.lpwRate; st0 += lt; o.rigH += lt; }
+        const up = (pitch==='steep'?R.steepUp:0) + (moss==='moderate'?R.mossModUp:moss==='heavy'?R.mossHeavyUp:0);
+        if(up) hide(line(g, `${solo?'':nm+': '}${pitch==='steep'?'steep pitch':''}${pitch==='steep'&&moss!=='light'?' + ':''}${moss!=='light'?moss+' moss':''} uplift`, price*up/100, `+${up}% on ${nm.toLowerCase()} price`), own, 'pitch/moss uplift');
+        t += st0 * (pitch==='steep'?1.3:1) * ({light:1,moderate:1.2,heavy:1.45}[moss]);
+        rls.push(...own);
+        if((r.cover==='slate'||r.cover==='clay') && m!=='scrape') rfW.push(['w',`${nm}: low pressure washing is not advised on slate or clay. Consider hand scrape plus biocide soft wash.`]);
+        if(r.cover==='flat' && m!=='lpw') rfW.push(['w',`${nm}: scraping is not suitable for felt or membrane roofs. Use a low pressure or soft wash.`]);
+      });
       o.setupT += R.roofSetup;
       bill(g, 'Set-up & pack-down', R.roofSetup, wSet, true);
       chemList('rf').forEach(id=>{ t += chemCharge(g, id, a, 'roof treatment') / w; });
@@ -391,8 +417,6 @@ function calcNow(){
         task('rf', 'Roof cleaning', t, w, 3);
         if(st>1) rfW.push(['b','Roof is over one storey but the tower is switched off. Our rule is tower for anything above one storey.']);
       }
-      if((ty==='slate'||ty==='clay') && m!=='scrape') rfW.push(['w','Low pressure washing is not advised on slate or clay. Consider hand scrape plus biocide soft wash.']);
-      if(ty==='flat' && m!=='lpw') rfW.push(['w','Scraping is not suitable for felt or membrane roofs. Use a low pressure or soft wash.']);
       if(st>=3) rfW.push(['w','Three storey roof: confirm tower height and ground conditions on site, or price for scaffold hire.']);
       o.notes.push('Roof cleaning creates debris in the gutters. Purgō will clean and survey gutters free of charge with all roof cleans.');
     }
@@ -567,7 +591,7 @@ function standardNotes(o){
     if(rows.some(r=>r.sand)) n.push('Joints are re-sanded with kiln-dried sand. A light top-up may be needed once it settles after rain.');
   }
   // water is needed for washing, gutter flushing and low pressure roof washing (not a scrape-only roof)
-  if(pw || has('Gutters') || (roof && $('rfM').value!=='scrape')) n.push('We will need access to an outside tap. Please tell us in advance if there is not one.');
+  if(pw || has('Gutters') || (roof && rfRows.some(r=>+r.sqm>0 && r.method!=='scrape'))) n.push('We will need access to an outside tap. Please tell us in advance if there is not one.');
   if(chem) n.push('Treatments keep working after we leave. Moss, algae and black spot can take 6 to 12 weeks to fade fully.');
   if(roof) n.push('We do not repair or replace tiles. Any broken or slipped tiles we find will be photographed and reported to you.');
   if(has('Windows')) n.push('We clean with purified water, so windows can look wet when we leave. They dry spot-free.');
@@ -653,7 +677,7 @@ const FORM_SKIP = /^(r_|ch_|pw_)/;
 function snapshot(){
   const f = {};
   document.querySelectorAll('.col input[id], .col select[id]').forEach(el=>{ if(FORM_SKIP.test(el.id)) return; f[el.id] = el.type==='checkbox' ? el.checked : el.value; });
-  const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfChems:chemList('rf').slice(), ctype, pricedWith: isLocked() ? pricing.snap : priceSnap()};
+  const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfRows:JSON.parse(JSON.stringify(rfRows)), rfChems:chemList('rf').slice(), ctype, pricedWith: isLocked() ? pricing.snap : priceSnap()};
   if(customNotes!==null) out.notes = customNotes.slice();
   if(window.PURGO_DEV && typeof MEASURE!=='undefined'){ const m = MEASURE.snapshot(); if(m.length) out.measures = m; }
   return out;
@@ -663,10 +687,14 @@ function restore(s){
   document.querySelectorAll('#ctype button').forEach(x=>x.classList.toggle('on', x.dataset.v===ctype));
   $('comBox').hidden = ctype!=='com';
   pwRows = (s.pwRows||[]).map(normRow);
+  // quotes saved before roof sections existed had one roof: turn it into a single section
+  const f0 = s.form || {};
+  rfRows = Array.isArray(s.rfRows) && s.rfRows.length ? s.rfRows.map(r=>Object.assign(newRf(1), r))
+    : [Object.assign(newRf(1), {sqm: f0.rfA!=null ? +f0.rfA||0 : 70, pitch: f0.rfP||'std', cover: f0.rfT||'concrete', method: f0.rfM||'scrape'})];
   customNotes = Array.isArray(s.notes) ? s.notes.slice() : null;
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
   if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
-  renderPw(); renderRfChem();
+  renderPw(); renderRf(); renderRfChem();
   $('email').value = '';
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
@@ -784,18 +812,25 @@ document.addEventListener('input', e=>{
   if(t.dataset.rk){ const v=parseFloat(t.value); if(!isNaN(v)){ R[t.dataset.rk]=v; markRatesDirty(); document.querySelectorAll(`[data-r="${t.dataset.rk}"]`).forEach(el=>el.textContent=v); if(t.dataset.rk==='chemApp') renderChems(); } }
   else if(t.dataset.cf){ const c=R.chems[+t.dataset.ci]; c[t.dataset.cf] = t.dataset.cf==='name' ? t.value : t.dataset.cf==='app' ? (parseFloat(t.value)>0 ? parseFloat(t.value) : null) : (parseFloat(t.value)||0); markRatesDirty(); if(t.dataset.cf==='name') refreshChemSelects(); }
   else if(t.dataset.f){ const r=pwRows[+t.dataset.i]; r[t.dataset.f] = t.type==='checkbox' ? t.checked : t.value; }
+  else if(t.dataset.rf){ const r=rfRows[+t.dataset.ri]; if(r) r[t.dataset.rf] = t.value; }
   if(t.id==='pc') resolvePc();
   if(t.id==='diesel'||t.id==='petrol') markRatesDirty();
   render();
 });
-document.addEventListener('change', e=>{ if(e.target.dataset.addchem && e.target.value){ const l = chemList(e.target.dataset.addchem); if(!l.includes(e.target.value)) l.push(e.target.value); if(e.target.dataset.addchem==='rf') renderRfChem(); else renderPw(); render(); return; } if(e.target.dataset.f){ const i=+e.target.dataset.i; const r=pwRows[i]; r[e.target.dataset.f] = e.target.type==='checkbox'?e.target.checked:e.target.value; if(e.target.dataset.f==='surf' && r.surf==='block'){ r.sand = true; const cb=$('pw_d_'+i); if(cb) cb.checked = true; } } if(e.target.classList.contains('svc')) syncSvc(); render(); });
+document.addEventListener('change', e=>{ const rt = e.target;
+  if(rt.dataset && rt.dataset.rf){ const r = rfRows[+rt.dataset.ri]; if(r){ r[rt.dataset.rf] = rt.value;
+    // a felt / membrane section can't be scraped: switch it to low pressure wash
+    if(rt.dataset.rf==='cover' && rt.value==='flat' && r.method!=='lpw'){ r.method = 'lpw'; renderRf(); } } render(); return; }
+  if(e.target.dataset.addchem && e.target.value){ const l = chemList(e.target.dataset.addchem); if(!l.includes(e.target.value)) l.push(e.target.value); if(e.target.dataset.addchem==='rf') renderRfChem(); else renderPw(); render(); return; } if(e.target.dataset.f){ const i=+e.target.dataset.i; const r=pwRows[i]; r[e.target.dataset.f] = e.target.type==='checkbox'?e.target.checked:e.target.value; if(e.target.dataset.f==='surf' && r.surf==='block'){ r.sand = true; const cb=$('pw_d_'+i); if(cb) cb.checked = true; } } if(e.target.classList.contains('svc')) syncSvc(); render(); });
 document.addEventListener('click', e=>{
   const t = e.target;
   if(t.dataset.rmchem!==undefined){ const [k, id] = t.dataset.rmchem.split('|'); const l = chemList(k); const j = l.indexOf(id); if(j>=0) l.splice(j,1); if(k==='rf') renderRfChem(); else renderPw(); render(); }
   if(t.dataset.rmpw!==undefined){ pwRows.splice(+t.dataset.rmpw,1); renderPw(); render(); }
+  if(t.dataset.rmrf!==undefined){ rfRows.splice(+t.dataset.rmrf,1); if(!rfRows.length) rfRows=[newRf(1)]; renderRf(); render(); }
   if(t.dataset.delchem!==undefined){ const id=R.chems[+t.dataset.delchem].id; removedChems.push(id); R.chems.splice(+t.dataset.delchem,1); pwRows.forEach(r=>{ normRow(r); r.chems = r.chems.filter(x=>x!==id); }); if(rfChems) rfChems = rfChems.filter(x=>x!==id); markRatesDirty(); renderChems(); renderPw(); render(); }
 });
 $('pc').addEventListener('blur', ()=>{ const v=$('pc').value; if(normPc(v).length>=5){ $('pc').value = fmtPc(v); resolvePc(); render(); } });
+$('addRf').onclick = ()=>{ rfRows.push(newRf(rfRows.length+1)); renderRf(); render(); };
 $('addPw').onclick = ()=>{ pwRows.push({name:'Area '+(pwRows.length+1),surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}); renderPw(); render(); };
 $('addChem').onclick = ()=>{ R.chems.push({id:'c'+Date.now(),name:'New chemical',cost:0,cover:10,markup:0}); markRatesDirty(); renderChems(); render(); };
 $('resetRates').onclick = ()=>{ const keep = R.chems; R = Object.assign(clone(DEF), {chems:keep}); markRatesDirty(); renderRates(); renderPw(); render(); };
@@ -823,10 +858,11 @@ $('copyQ').onclick = async ()=>{
 };
 $('newJob').onclick = ()=>{
   ['cust','addr','pc','phone','email','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
-  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','rfA','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0);
+  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0);
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
+  rfRows=[newRf(1)]; renderRf();
   rfChems = null; customNotes = null; loc = null; makeRef(); renderPw(); renderRfChem(); render();
   if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore([]);
 };
@@ -1318,7 +1354,7 @@ if('serviceWorker' in navigator && location.protocol!=='file:'){
 
 /* ---------- start ---------- */
 async function boot(){
-  renderCx(); renderRates(); renderPw(); syncSvc(); render(); updateNet();
+  renderCx(); renderRates(); renderPw(); renderRf(); syncSvc(); render(); updateNet();
   if(!sb){ show('login'); $('loginForm').hidden = true; loginMsg('This app is not connected to its database yet. Add the Supabase details to config.js.'); return; }
   sb.auth.onAuthStateChange((ev, session)=>{
     if(ev==='PASSWORD_RECOVERY'){ show('login'); $('loginForm').hidden = true; $('resetForm').hidden = false; loginMsg(); }

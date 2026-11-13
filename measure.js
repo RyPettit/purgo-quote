@@ -66,8 +66,8 @@ const MEASURE = (()=>{
     const opts = {path, editable:true, draggable:false, strokeColor:COLORS[source], strokeWeight:3, strokeOpacity:1, map:gmap, zIndex:2};
     return type==='line' ? new google.maps.Polyline(opts) : new google.maps.Polygon(Object.assign(opts, {fillColor:COLORS[source], fillOpacity:.28}));
   }
-  function addShape({label, type, path, source, pitch}){
-    const s = {id:++seq, label, type, kind, source, pitch: pitch || (kind==='roof' ? 'std' : null)};
+  function addShape({label, type, path, source, pitch, covering}){
+    const s = {id:++seq, label, type, kind, source, covering: covering||null, pitch: pitch || (kind==='roof' ? 'std' : null)};
     s.obj = makeObj(type, path, source);
     const p = s.obj.getPath();
     ['set_at','insert_at','remove_at'].forEach(ev=> p.addListener(ev, ()=> list()));
@@ -210,7 +210,7 @@ const MEASURE = (()=>{
       if(error){ let msg = error.message; try{ const b = await error.context.json(); if(b && b.error) msg = b.error; }catch(e){} throw new Error(msg); }
       if(data.error) throw new Error(data.error);
       if(kind!=='patio') shapes.filter(s=>s.kind===kind && s.source==='ai').forEach(s=>removeShape(s.id));
-      (data.shapes||[]).forEach(sh=> addShape({label:sh.label, type: kind==='gutters' ? 'line' : sh.type, path: sh.points.map(p=>({lat:p[0], lng:p[1]})), source:'ai', pitch: kind==='roof' ? (PITCH.some(p=>p.v===sh.pitch) ? sh.pitch : guessPitch(sh.covering ? sh : data.suggestions)) : null}));
+      (data.shapes||[]).forEach(sh=> addShape({label:sh.label, type: kind==='gutters' ? 'line' : sh.type, path: sh.points.map(p=>({lat:p[0], lng:p[1]})), source:'ai', covering: sh.covering||null, pitch: kind==='roof' ? (PITCH.some(p=>p.v===sh.pitch) ? sh.pitch : guessPitch(sh.covering ? sh : data.suggestions)) : null}));
       suggestions = data.suggestions || null; lastNotes = data.notes || '';
       if(!(data.shapes||[]).length) status('The AI could not find it. Move the map so the property is under the cross, zoom in, and try again, or draw it by hand.', 'w');
       else status(`AI outline added (${data.confidence||'unknown'} confidence). Drag the white dots to correct it.${kind==='patio' ? ' To add another area, move the cross onto it and press AI outline again.' : ''}`, data.confidence==='low' ? 'w' : '');
@@ -256,10 +256,15 @@ const MEASURE = (()=>{
       }
       $('on-pw').checked = true; renderPw();
     } else if(kind==='roof'){
-      $('rfA').value = Math.round(tot);
-      // the quote's pitch uplift follows the biggest roof section (flat extensions don't make the house steep)
-      const big = mine.slice().sort((a,b)=>shownValue(b).n - shownValue(a).n)[0]; const p = pitchOf(big); $('rfP').value = p.rf;
-      if(suggestions && ['concrete','clay','slate','flat','other'].includes(suggestions.roof_covering)) $('rfT').value = suggestions.roof_covering;
+      // each measured section becomes its own priced roof section on the quote
+      const COVERS = ['concrete','clay','slate','flat','other'];
+      const quotePitch = v => v==='flat' ? 'flat' : v==='low' ? 'low' : (v==='steep'||v==='vsteep') ? 'steep' : 'std';
+      rfRows = mine.map(s=>{
+        const pitch = quotePitch(s.pitch);
+        const cover = pitch==='flat' ? 'flat' : COVERS.includes(s.covering) ? s.covering : (suggestions && COVERS.includes(suggestions.roof_covering) && suggestions.roof_covering!=='flat' ? suggestions.roof_covering : 'concrete');
+        return {name:s.label, sqm:Math.round(shownValue(s).n), pitch, cover, method: cover==='flat' ? 'lpw' : 'scrape'};
+      });
+      renderRf();
       if(suggestions && ['light','moderate','heavy'].includes(suggestions.moss)) $('rfMoss').value = suggestions.moss;
       $('on-rf').checked = true;
     } else {
@@ -273,13 +278,13 @@ const MEASURE = (()=>{
   // saved with the quote so anyone can see what was measured
   function snapshot(){
     if(!gmap) return MEASURE._pending || [];
-    return shapes.filter(s=>s.obj.getPath().getLength()).map(s=>({label:s.label, type:s.type, kind:s.kind, source:s.source, pitch:s.pitch,
+    return shapes.filter(s=>s.obj.getPath().getLength()).map(s=>({label:s.label, type:s.type, kind:s.kind, source:s.source, pitch:s.pitch, covering:s.covering||null,
       points:s.obj.getPath().getArray().map(ll=>[+ll.lat().toFixed(7), +ll.lng().toFixed(7)]), value:+shownValue(s).n.toFixed(1)}));
   }
   function restore(list){
     clearAll(); MEASURE._pending = list || [];
     if(!gmap || !list) return;
-    list.forEach(x=>{ const k = kind; kind = x.kind; addShape({label:x.label, type:x.type, path:x.points.map(p=>({lat:p[0],lng:p[1]})), source:x.source, pitch:x.pitch}); kind = k; });
+    list.forEach(x=>{ const k = kind; kind = x.kind; addShape({label:x.label, type:x.type, path:x.points.map(p=>({lat:p[0],lng:p[1]})), source:x.source, pitch:x.pitch, covering:x.covering}); kind = k; });
     MEASURE._pending = null; setKind(kind);
   }
 
