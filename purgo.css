@@ -237,6 +237,7 @@ label.f{justify-content:space-between}
 
 /* dev-only features */
 html:not(.is-dev) .dev-only{display:none!important}
+html:not(.has-measure) .measure-only{display:none!important}
 .devbadge{font-size:.62rem;font-weight:800;letter-spacing:.14em;background:#f2c14e;color:#132f47;border-radius:4px;padding:2px 6px;margin-left:4px;align-self:center}
 .inrow{display:flex;gap:6px;align-items:center}
 .inrow input{flex:1 1 auto;min-width:0}

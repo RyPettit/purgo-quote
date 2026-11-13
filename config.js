@@ -9,8 +9,9 @@
   window.PURGO_CONFIG = live ? {
     env: 'live',
     url: 'https://iixqkqkmdholetujuqin.supabase.co',
-    key: 'sb_publishable_zfndNRZtMBkaP85UDpX6Bg_dgHXXY5Y'
-    // no measuring on live: the AI and map keys live only in the dev project
+    key: 'sb_publishable_zfndNRZtMBkaP85UDpX6Bg_dgHXXY5Y',
+    googleMapsKey: 'AIzaSyA8dEa4D-beDLkn3oM0Yg1w-DaFRKkFrrk',   // browser key restricted to the Purgō sites
+    measureFunction: 'Measure'
   } : {
     env: 'dev',
     url: 'https://mzqgazqbkmenssrdbuiq.supabase.co',
@@ -18,5 +19,7 @@
     googleMapsKey: 'AIzaSyA8dEa4D-beDLkn3oM0Yg1w-DaFRKkFrrk',   // browser key restricted to the Purgō sites
     measureFunction: 'measure'
   };
+  window.PURGO_MEASURE = !!window.PURGO_CONFIG.measureFunction;
   if(window.PURGO_DEV) document.documentElement.classList.add('is-dev');
+  if(window.PURGO_MEASURE) document.documentElement.classList.add('has-measure');
 })();

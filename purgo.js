@@ -229,7 +229,7 @@ function renderPw(){
   $('pwRows').innerHTML = pwRows.map((r,i)=>`<div class="arow">
     <label class="f">Area<input id="pw_n_${i}" data-i="${i}" data-f="name" value="${esc(r.name)}"></label>
     <label class="f">Surface<select id="pw_s_${i}" data-i="${i}" data-f="surf">${Object.entries(SURF).map(([k,v])=>`<option value="${k}" ${k===r.surf?'selected':''}>${v[0]}</option>`).join('')}</select></label>
-    <label class="f">Size (m²)<span class="inrow"><input id="pw_q_${i}" type="number" min="0" data-i="${i}" data-f="sqm" value="${r.sqm}"><button class="btn sm dev-only" type="button" data-measure="pw:${i}">Measure</button></span></label>
+    <label class="f">Size (m²)<span class="inrow"><input id="pw_q_${i}" type="number" min="0" data-i="${i}" data-f="sqm" value="${r.sqm}"><button class="btn sm measure-only" type="button" data-measure="pw:${i}">Measure</button></span></label>
     <label class="f">Soiling<select id="pw_o_${i}" data-i="${i}" data-f="soil">${['light','normal','heavy'].map(v=>`<option value="${v}" ${v===r.soil?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></label>
     ${chemPicker('pw:'+i, 'Chemical treatments')}
     <label class="ck" style="align-self:center"><input type="checkbox" id="pw_d_${i}" data-i="${i}" data-f="sand" ${r.sand?'checked':''}>Re-sand joints</label>
@@ -679,7 +679,7 @@ function snapshot(){
   document.querySelectorAll('.col input[id], .col select[id]').forEach(el=>{ if(FORM_SKIP.test(el.id)) return; f[el.id] = el.type==='checkbox' ? el.checked : el.value; });
   const out = {form:f, pwRows:JSON.parse(JSON.stringify(pwRows)), rfRows:JSON.parse(JSON.stringify(rfRows)), rfChems:chemList('rf').slice(), ctype, pricedWith: isLocked() ? pricing.snap : priceSnap()};
   if(customNotes!==null) out.notes = customNotes.slice();
-  if(window.PURGO_DEV && typeof MEASURE!=='undefined'){ const m = MEASURE.snapshot(); if(m.length) out.measures = m; }
+  if(window.PURGO_MEASURE && typeof MEASURE!=='undefined'){ const m = MEASURE.snapshot(); if(m.length) out.measures = m; }
   return out;
 }
 function restore(s){
@@ -693,7 +693,7 @@ function restore(s){
     : [Object.assign(newRf(1), {sqm: f0.rfA!=null ? +f0.rfA||0 : 70, pitch: f0.rfP||'std', cover: f0.rfT||'concrete', method: f0.rfM||'scrape'})];
   customNotes = Array.isArray(s.notes) ? s.notes.slice() : null;
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
-  if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
+  if(window.PURGO_MEASURE && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
   renderPw(); renderRf(); renderRfChem();
   $('email').value = '';
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
@@ -864,7 +864,7 @@ $('newJob').onclick = ()=>{
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
   rfRows=[newRf(1)]; renderRf();
   rfChems = null; customNotes = null; loc = null; makeRef(); renderPw(); renderRfChem(); render();
-  if(window.PURGO_DEV && typeof MEASURE!=='undefined') MEASURE.restore([]);
+  if(window.PURGO_MEASURE && typeof MEASURE!=='undefined') MEASURE.restore([]);
 };
 
 
@@ -936,7 +936,7 @@ function syncEditing(){
 }
 function show(view){
   if(view==='admin' && ROLE!=='admin') view = 'quote';
-  if(view==='measure' && !window.PURGO_DEV) view = 'quote';
+  if(view==='measure' && !window.PURGO_MEASURE) view = 'quote';
   if(!ME && view!=='login') view = 'login';
   VIEWS.forEach(v=> $('view-'+v).hidden = v!==view);
   document.querySelectorAll('.nav button[data-view]').forEach(b=>b.classList.toggle('on', b.dataset.view===view));
