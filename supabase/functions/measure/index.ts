@@ -268,7 +268,7 @@ if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req) => {
     if (!["patio", "roof", "gutters"].includes(kind)) return reply({ error: "Unknown measurement type." }, 400);
     const z = Math.max(17, Math.min(21, Math.round(zoom)));
     const gkey = Deno.env.get("GOOGLE_MAPS_SERVER_KEY"), akey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!gkey || !akey) return reply({ error: "The AI measuring keys are not set up yet (GOOGLE_MAPS_SERVER_KEY and ANTHROPIC_API_KEY)." }, 503);
+    if (!gkey || !akey) return reply({ error: `The AI measuring keys are not set up yet (missing: ${[!akey && "ANTHROPIC_API_KEY", !gkey && "GOOGLE_MAPS_SERVER_KEY"].filter(Boolean).join(" and ")}).` }, 503);
 
     const img = await fetch(`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${z}&size=${SIZE}x${SIZE}&scale=${SCALE}&maptype=satellite&markers=size:tiny%7Ccolor:red%7C${lat},${lng}&key=${gkey}`);
     if (!img.ok) return reply({ error: `Satellite image failed (${img.status}). Check the Google key allows the Maps Static API.` }, 502);
