@@ -13,15 +13,16 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=52aa4af92b">
+<link rel="stylesheet" href="purgo.css?v=aaef68761e">
 </head>
 <body>
 <header class="topbar">
   <div class="tb-in">
-    <a class="brand" href="#quote" aria-label="Purgō Quote"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"></a>
+    <a class="brand" href="#quote" aria-label="Purgō Quote"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"><span class="devbadge dev-only">DEV</span></a>
     <nav class="nav" id="nav" hidden>
       <button type="button" data-view="quote">Quote</button>
       <button type="button" data-view="quotes">Saved quotes</button>
+      <button type="button" data-view="measure" class="measure-only">Measure</button>
       <button type="button" data-view="admin" class="admin-only">Admin</button>
     </nav>
     <div class="tb-user" id="tbUser" hidden>
@@ -134,7 +135,7 @@
         <div class="svc-body">
           <div class="fields">
             <label class="f">Workers<input id="wGt" type="number" min="1" max="6" placeholder="whole crew"></label>
-            <label class="f">Gutter length (m)<input id="gtM" type="number" min="0" step="1" value="0"></label>
+            <label class="f">Gutter length (m)<span class="inrow"><input id="gtM" type="number" min="0" step="1" value="0"><button class="btn sm measure-only" type="button" data-measure="gt">Measure</button></span></label>
             <label class="f">Storeys<select id="gtSt"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4+</option></select></label>
             <label class="f">Downpipe guards (qty)<input id="gtGuard" type="number" min="0" value="0"></label>
             <label class="f">Fascia &amp; soffit clean (m)<input id="gtFas" type="number" min="0" value="0"></label>
@@ -173,12 +174,10 @@
       <section class="card" id="sec-rf">
         <div class="svc-head"><h2>Roof cleaning <span class="tag">£/m²</span></h2><label class="switch"><input type="checkbox" class="svc" id="on-rf"></label></div>
         <div class="svc-body">
+          <div class="rows" id="rfRows"></div>
+          <div style="display:flex;gap:8px;margin:10px 0 12px;flex-wrap:wrap"><button class="btn sm" type="button" id="addRf">+ Add roof section</button><button class="btn sm measure-only" type="button" data-measure="rf">Measure roof</button></div>
           <div class="fields">
             <label class="f">Workers<input id="wRf" type="number" min="1" max="6" placeholder="whole crew"></label>
-            <label class="f">Roof area (m²)<input id="rfA" type="number" min="0" value="70"></label>
-            <label class="f">Method<select id="rfM"><option value="scrape">Scrape &amp; moss removal</option><option value="lpw">Low pressure wash</option><option value="both">Scrape + low pressure wash</option></select></label>
-            <label class="f">Roof covering<select id="rfT"><option value="concrete">Concrete tile</option><option value="clay">Clay tile</option><option value="slate">Slate</option><option value="flat">Flat / felt / EPDM</option><option value="other">Other</option></select></label>
-            <label class="f">Pitch<select id="rfP"><option value="low">Low</option><option value="std" selected>Standard</option><option value="steep">Steep</option></select></label>
             <label class="f">Moss / growth<select id="rfMoss"><option value="light">Light</option><option value="moderate" selected>Moderate</option><option value="heavy">Heavy</option></select></label>
             <label class="f">Storeys to eaves<select id="rfSt"><option value="1">1 (bungalow)</option><option value="2" selected>2</option><option value="3">3</option></select></label>
             <label class="f">Scaffold tower?<select id="rfTw"><option value="auto">Auto (needed over 1 storey)</option><option value="yes">Yes</option><option value="no">No</option></select></label>
@@ -282,6 +281,85 @@
   </section>
 </main>
 
+<!-- MEASURE (dev) -->
+<main id="view-measure" class="wrap" hidden>
+  <div class="viewbar"><div><h2 class="vtitle">Measure <span class="tag">Test</span></h2><p class="sub">Put the cross on the customer's house, choose the property type, then press AI outline. Drag the dots to correct it; the figures update as you go.</p></div>
+    <div class="vb-actions"><button class="btn" type="button" id="mBack">Back to quote</button><button class="btn pri" type="button" id="mUse" disabled>Use</button></div></div>
+  <div class="m-src"><div class="seg" id="mSrc"><button type="button" data-s="map" class="on">Satellite</button><button type="button" data-s="photo">Photo</button></div></div>
+  <div class="m-grid" id="mMapMode">
+    <section class="card m-mapcard">
+      <div class="m-bar">
+        <div class="seg" id="mKind"><button type="button" data-k="patio" class="on">Drive / patio</button><button type="button" data-k="roof">Roof</button><button type="button" data-k="gutters">Gutters</button></div>
+        <label class="f m-addr">Address<span class="inrow"><input id="mAddr" placeholder="House number, street, postcode"><button class="btn sm" type="button" id="mFind">Find</button></span></label>
+        <label class="f m-prop">Property<select id="mProp"><option value="detached">Detached</option><option value="semi" selected>Semi-detached</option><option value="end">End terrace</option><option value="mid">Mid terrace</option><option value="commercial">Commercial / other</option></select></label>
+      </div>
+      <div class="m-mapwrap"><div id="mMap"></div><div class="m-cross" aria-hidden="true"></div></div>
+      <div class="m-tools">
+        <button class="btn pri" type="button" id="mAi">AI outline</button>
+        <button class="btn" type="button" id="mDraw">Draw by hand</button>
+        <button class="btn" type="button" id="mSplit">Split</button>
+        <button class="btn" type="button" id="mDelPts">Delete points</button>
+        <button class="btn" type="button" id="mClear">Clear</button>
+      </div>
+      <p class="note" id="mStatus" hidden></p>
+    </section>
+    <section class="card">
+      <h2>Measurements</h2>
+      <div id="mList" class="svc-body"></div>
+      <p class="hint">Blue outlines are the AI's, yellow ones you drew. Drag a white dot to move a corner; drag a faint mid-point dot to add a corner. Roof area allows for pitch: pick the pitch from a street view or photo.</p>
+    </section>
+  </div>
+
+  <div class="m-grid" id="mPhotoMode" hidden>
+    <section class="card">
+      <div class="m-bar">
+        <label class="btn pri p-pick">Take photo<input type="file" id="pCam" accept="image/*" capture="environment" hidden></label>
+        <label class="btn p-pick">Choose photo<input type="file" id="pFile" accept="image/*" hidden></label>
+        <label class="f m-addr">Note for the AI (optional)<input id="pHint" placeholder="e.g. front drive only, ignore the neighbour's side"></label>
+      </div>
+      <div class="p-stage" id="pStage">
+        <img id="pImg" alt="Photo being measured" hidden>
+        <svg id="pSvg" hidden></svg>
+        <div class="p-empty" id="pEmpty"><b>Take or choose a photo of the drive or patio.</b><br>Best from a slight height (an upstairs window or the van step), with the whole area in shot and the paving pattern visible.</div>
+      </div>
+      <div class="m-tools">
+        <button class="btn pri" type="button" id="pAi" disabled>AI outline</button>
+        <button class="btn" type="button" id="pDraw" disabled>Draw by hand</button>
+        <button class="btn" type="button" id="pRef" disabled>Mark reference</button>
+        <button class="btn" type="button" id="pDel" disabled>Delete points</button>
+        <button class="btn" type="button" id="pClear" disabled>Clear</button>
+      </div>
+      <p class="note" id="pStatus" hidden></p>
+    </section>
+    <section class="card">
+      <h2>Photo measurement</h2>
+      <div class="svc-body">
+        <div id="pAiNote"></div>
+        <div class="fields">
+          <label class="f wide">Reference (yellow box)<select id="pRefType">
+            <option value="200x100">Block paving 200 × 100 mm</option>
+            <option value="600x600">Slabs 600 × 600 mm</option>
+            <option value="900x600">Slabs 900 × 600 mm</option>
+            <option value="450x450">Slabs or drain cover 450 × 450 mm</option>
+            <option value="600x300">Slabs 600 × 300 mm</option>
+            <option value="custom">Custom size</option>
+          </select></label>
+          <label class="f">Side 1→2: how many<input id="pN1" type="number" min="1" step="1" value="1"></label>
+          <label class="f">each (mm)<input id="pU1" type="number" min="10" value="200"></label>
+          <label class="f">Side 2→3: how many<input id="pN2" type="number" min="1" step="1" value="1"></label>
+          <label class="f">each (mm)<input id="pU2" type="number" min="10" value="100"></label>
+        </div>
+        <p class="hint" id="pRefSize" style="margin:6px 0 0"></p>
+        <div style="margin-top:8px"><button class="btn sm" type="button" id="pSwap">Swap sides</button></div>
+        <div class="p-result" id="pResult"></div>
+        <label class="f" style="margin-top:12px">Name<input id="pLabel" value="Driveway"></label>
+        <div style="margin-top:12px"><button class="btn pri" type="button" id="pUse" disabled>Add to pressure washing</button></div>
+      </div>
+      <p class="hint">The yellow box is something of known size lying flat on the drive. The bigger it is, the more accurate the answer: stretch it over as many whole blocks or slabs as you can count, then enter how many along each side. Drag its numbered corners exactly onto the joints. Blue is the area being measured.</p>
+    </section>
+  </div>
+</main>
+
 <!-- ADMIN -->
 <main id="view-admin" class="wrap" hidden>
   <div class="viewbar"><div><h2 class="vtitle">Admin</h2><p class="sub">Only you can see and change this page. Staff quote from these prices but never see costs, labour pay, markups or fuel. Changes save automatically a moment after you stop typing.</p></div>
@@ -321,6 +399,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=c9afa24376"></script>
+<script src="purgo.js?v=82c0175091"></script>
+<script src="measure.js?v=6c2553c5bc"></script>
 </body>
 </html>
