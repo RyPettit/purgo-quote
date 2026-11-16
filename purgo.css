@@ -311,7 +311,7 @@ html:not(.has-measure) .measure-only{display:none!important}
 .pf-lens{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:4px}
 .pf-lenbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
 .pf-tot{background:var(--soft);border-radius:6px;padding:6px 10px;font-weight:800}
-.pf-price{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
+section.card.pf-price{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
 .pf-price h3,.pf-price .hint{color:inherit;opacity:.8}
 .pf-pl{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:.86rem}
 .pf-pl small{display:block;opacity:.7;font-size:.74rem}
