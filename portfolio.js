@@ -486,7 +486,7 @@ const PORTFOLIO = (()=>{
       }
       live.map = new google.maps.Map($('pfMap'), {center:pos, zoom:19, mapTypeId:'satellite', tilt:0, disableDefaultUI:true, zoomControl:true, fullscreenControl:true, gestureHandling:'cooperative', clickableIcons:false});
       live.marker = new google.maps.Marker({position:pos, map:live.map});
-      new google.maps.StreetViewService().getPanorama({location:pos, radius:80, source:google.maps.StreetViewSource.OUTDOOR, preference:google.maps.StreetViewPreference.NEAREST}, (data, status)=>{
+      new google.maps.StreetViewService().getPanorama({location:pos, radius:80, source:(google.maps.StreetViewSource.GOOGLE||google.maps.StreetViewSource.OUTDOOR), preference:google.maps.StreetViewPreference.NEAREST}, (data, status)=>{
         if(!$('pfPano')) return;
         if(status!=='OK'){ $('pfPano').innerHTML = '<div class="pf-nosv">No Google Street View near this building.<br>Take a street photo on site.</div>'; return; }
         const at = data.location.latLng;
