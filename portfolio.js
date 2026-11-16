@@ -126,6 +126,7 @@ const PORTFOLIO = (()=>{
   async function signAll(force){
     const paths = [];
     Object.values(sites).forEach(s=>imgs(s).forEach(i=>{ if(i.path && (force || !urls[i.path])) paths.push(i.path); }));
+    urlsAt = Date.now();
     if(!paths.length) return;
     for(let i=0;i<paths.length;i+=100){
       const {data, error} = await sb.storage.from(BUCKET).createSignedUrls(paths.slice(i,i+100), 60*60*6);
@@ -192,7 +193,7 @@ const PORTFOLIO = (()=>{
   /* ---------- rendering: portfolio ---------- */
   function render(){
     if(!cur) return renderList();
-    if(Date.now()-urlsAt > 5*3600e3) signAll(true).then(()=>render());
+    if(urlsAt && Date.now()-urlsAt > 5*3600e3){ urlsAt = Date.now(); signAll(true).then(()=>render()); }
     const P = portfolioTotals();
     root().innerHTML = `
     <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.length} properties · <span id="pfSave">All changes saved</span></p></div>
