@@ -99,7 +99,7 @@ const PORTFOLIO = (()=>{
     const inc = all.filter(s=>siteData(s).include!==false && s.data.status!=='noquote');
     let sub = 0, m = 0, hrs = 0;
     const priced = inc.filter(s=>{ const c = calc(s); sub += c.price; m += c.m; hrs += c.hrs; return c.price>0; });
-    const rams = st.rams ? R.rams : 0;
+    const rams = st.rams && priced.length ? R.rams : 0;
     const disc = priced.length>=num(st.discMin) ? sub*num(st.discPct)/100 : 0;
     const net = sub - disc + rams;
     const vat = st.vat ? net*R.vat/100 : 0;
