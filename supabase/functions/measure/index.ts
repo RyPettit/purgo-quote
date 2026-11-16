@@ -231,9 +231,10 @@ async function checkUser(req: Request): Promise<string | null> {
   if (!u.ok) return "Please sign in again.";
   const user = await u.json();
   // read the caller's own profile with their own token; the database rules do the rest
-  const p = await fetch(`${url}/rest/v1/profiles?id=eq.${user.id}&select=active`, { headers: { Authorization: auth, apikey } });
+  const p = await fetch(`${url}/rest/v1/profiles?id=eq.${user.id}&select=active,role`, { headers: { Authorization: auth, apikey } });
   const rows = p.ok ? await p.json() : [];
   if (!rows?.[0]?.active) return "Your account is not active.";
+  if (!["admin", "staff"].includes(rows[0].role)) return "Measuring is for Purgō staff only.";
   return null;
 }
 

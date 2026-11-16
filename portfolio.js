@@ -30,6 +30,8 @@ const PORTFOLIO = (()=>{
     ['water','No outside tap (downpipe flushing)','cx_water'],
     ['hours','Restricted working hours',null]
   ];
+  const JOB_ST = [['','Not started','#9AAFBE'],['booked','Booked','#6DA7C4'],['done','Completed','#2E8B57'],['noaccess',"Couldn't access",'#B6453B'],['na','Not in this job','#C9D3DA']];
+  const WORK_DEFAULT = 'All gutters cleared of moss, leaves and debris. Outlets and downpipes checked and flushed. Waste bagged and removed from site.';
   const FREQ = {once:['One-off clean',1],annual:['Annual (1 visit / year)',1],biannual:['Twice yearly (spring & autumn)',2],quarterly:['Quarterly (4 visits / year)',4]};
   const DEF_SET = {quoteRef:'', freq:'once', crew:2, discPct:10, discMin:20, vat:true, rams:true, mewpDay:0, showPhotos:true, showAccess:true, onlyReviewed:false, intro:'', validDays:30, condHeavy:true};
 
@@ -39,6 +41,7 @@ const PORTFOLIO = (()=>{
   const pending = {}, chains = {};
   const root = () => $('view-portfolio');
   const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  const fmtD = v => { if(!v) return ''; const d = new Date(v); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}); };
   const gbp0 = n => '£' + Math.round(n).toLocaleString('en-GB');
   const S = () => Object.assign({}, DEF_SET, (cur && cur.settings) || {});
 
@@ -51,11 +54,17 @@ const PORTFOLIO = (()=>{
     if(d.include===undefined) d.include = true;
     d.status = d.status || 'todo'; d.condition = d.condition || 'unknown';
     s.photos = s.photos || {}; s.photos.site = Array.isArray(s.photos.site) ? s.photos.site : [];
+    s.photos.job = Array.isArray(s.photos.job) ? s.photos.job : []; s.photos.files = Array.isArray(s.photos.files) ? s.photos.files : [];
+    d.job = Object.assign({status:'', booked:'', done:'', reason:'', shareReport:false}, d.job||{});
+    d.job.report = Object.assign({work:'', condition:'', issues:'', recommend:''}, d.job.report||{});
     return d;
   }
   const totalLen = d => ['front','rear','left','right','other'].reduce((a,k)=>a+num(d.len&&d.len[k]),0);
   const sorted = () => Object.values(sites).sort((a,b)=>num(a.ref)-num(b.ref) || String(a.name||a.address).localeCompare(b.name||b.address));
   const imgs = s => [s.photos.aerial, s.photos.street, ...(s.photos.site||[])].filter(Boolean);
+  const allFiles = s => [...imgs(s), ...(s.photos.job||[]), ...(s.photos.files||[])];
+  const jobOf = k => JOB_ST.find(x=>x[0]===(k||'')) || JOB_ST[0];
+  const inJob = s => s.data.include!==false && s.data.status!=='noquote' && (s.data.job&&s.data.job.status)!=='na';
   const imgStats = s => { const a = imgs(s); return {total:a.length, done:a.filter(x=>x.reviewed).length}; };
 
   function calc(s){
@@ -109,7 +118,7 @@ const PORTFOLIO = (()=>{
 
   /* ---------- database ---------- */
   async function loadList(){
-    const {data, error} = await sb.from('portfolios').select('id,name,client,status,settings,updated_at,created_by_name,portfolio_sites(count)').order('updated_at', {ascending:false});
+    const {data, error} = await sb.from('portfolios').select('id,name,client,contact,email,status,settings,files,customer_quote,updated_at,created_by_name,portfolio_sites(count)').order('updated_at', {ascending:false});
     if(error) throw error;
     list = data || []; loaded = true;
   }
@@ -125,7 +134,8 @@ const PORTFOLIO = (()=>{
   }
   async function signAll(force){
     const paths = [];
-    Object.values(sites).forEach(s=>imgs(s).forEach(i=>{ if(i.path && (force || !urls[i.path])) paths.push(i.path); }));
+    Object.values(sites).forEach(s=>allFiles(s).forEach(i=>{ if(i.path && (force || !urls[i.path])) paths.push(i.path); }));
+    (cur && Array.isArray(cur.files) ? cur.files : []).forEach(i=>{ if(i.path && (force || !urls[i.path])) paths.push(i.path); });
     urlsAt = Date.now();
     if(!paths.length) return;
     for(let i=0;i<paths.length;i+=100){
@@ -183,7 +193,7 @@ const PORTFOLIO = (()=>{
     $('pfCreate').onclick = async ()=>{
       const name = $('pfNewName').value.trim(); if(!name){ flash('Give the portfolio a name'); return; }
       const ref = 'PF-' + new Date().getFullYear() + '-' + String(list.length+1).padStart(3,'0');
-      const {data, error} = await sb.from('portfolios').insert({name, client:$('pfNewClient').value.trim(), created_by_name:ME.name, settings:Object.assign({}, DEF_SET, {quoteRef:ref})}).select('id,name,client,status,settings,updated_at,created_by_name').single();
+      const {data, error} = await sb.from('portfolios').insert({name, client:$('pfNewClient').value.trim(), created_by_name:ME.name, settings:Object.assign({}, DEF_SET, {quoteRef:ref})}).select('id,name,client,contact,email,status,settings,files,customer_quote,updated_at,created_by_name').single();
       if(error){ flash('Could not create: ' + error.message); return; }
       data.portfolio_sites = [{count:0}]; list.unshift(data); await openPortfolio(data.id); tab = 'settings'; render();
     };
@@ -197,11 +207,11 @@ const PORTFOLIO = (()=>{
     const P = portfolioTotals();
     root().innerHTML = `
     <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.length} properties · <span id="pfSave">All changes saved</span></p></div>
-      <div class="vb-actions"><div class="seg" id="pfTabs">${[['summary','Summary'],['site','Properties'],['quote','Customer quote'],['settings','Settings & import']].map(([k,l])=>`<button type="button" data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div></div></div>
+      <div class="vb-actions"><div class="seg" id="pfTabs">${[['summary','Summary'],['site','Properties'],['quote','Customer quote'],['customer','Customer access'],['settings','Settings & import']].map(([k,l])=>`<button type="button" data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div></div></div>
     <div id="pfBody"></div>`;
     $('pfBack').onclick = e=>{ e.preventDefault(); try{ sessionStorage.removeItem('pfCur'); }catch(x){} loadList().then(renderList); };
     root().querySelectorAll('#pfTabs button').forEach(b=> b.onclick = ()=>{ tab = b.dataset.t; render(); window.scrollTo(0,0); });
-    ({summary:renderSummary, site:renderSite, quote:renderQuote, settings:renderSettings}[tab]||renderSummary)($('pfBody'), P);
+    ({summary:renderSummary, site:renderSite, quote:renderQuote, customer:renderCustomer, settings:renderSettings}[tab]||renderSummary)($('pfBody'), P);
   }
   const statusOf = k => STATUSES.find(s=>s[0]===k) || STATUSES[0];
   const opt = (arr, val, ph) => `<option value="">${ph||'Select…'}</option>` + arr.map(o=>{ const [v,l] = Array.isArray(o)?o:[o,o]; return `<option value="${esc(v)}" ${String(val)===String(v)?'selected':''}>${esc(l)}</option>`; }).join('');
@@ -212,7 +222,7 @@ const PORTFOLIO = (()=>{
     const counts = {}; STATUSES.forEach(s=>counts[s[0]]=0); all.forEach(s=>counts[s.data.status]=(counts[s.data.status]||0)+1);
     const rev = all.reduce((a,s)=>{ const r = imgStats(s); a.d += r.done; a.t += r.total; return a; }, {d:0,t:0});
     let rows = all.filter(s=>(!filterStatus || s.data.status===filterStatus) && (!search || [s.name,s.address,s.postcode,s.data.type,s.data.notes].join(' ').toLowerCase().includes(search.toLowerCase())));
-    const key = {ref:s=>num(s.ref), name:s=>(s.name||s.address||'').toLowerCase(), type:s=>s.data.type||'', storeys:s=>num(s.data.storeys), len:s=>totalLen(s.data), status:s=>STATUSES.findIndex(x=>x[0]===s.data.status), price:s=>calc(s).price, hrs:s=>calc(s).hrs};
+    const key = {ref:s=>num(s.ref), name:s=>(s.name||s.address||'').toLowerCase(), type:s=>s.data.type||'', storeys:s=>num(s.data.storeys), len:s=>totalLen(s.data), status:s=>STATUSES.findIndex(x=>x[0]===s.data.status), job:s=>JOB_ST.findIndex(x=>x[0]===s.data.job.status)+(s.data.job.done||s.data.job.booked||''), price:s=>calc(s).price, hrs:s=>calc(s).hrs};
     if(key[sortKey]) rows.sort((a,b)=>{ const x = key[sortKey](a), y = key[sortKey](b); return (x>y?1:x<y?-1:0)*sortDir; });
     const th = (k,l,c='') => `<th class="${c}" ${k?`data-sort="${k}"`:''}>${l}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`;
     box.innerHTML = `
@@ -223,6 +233,7 @@ const PORTFOLIO = (()=>{
       <div class="stat"><span>Images reviewed</span><b>${rev.d} <small>of ${rev.t}</small></b></div>
       <div class="stat"><span>Total gutter run</span><b>${Math.round(P.m).toLocaleString()} m</b></div>
       <div class="stat"><span>Time on site</span><b>${P.hrs.toFixed(1)} h <small>${(P.hrs/R.dayHours).toFixed(1)} days</small></b></div>
+      <div class="stat"><span>Jobs completed</span><b>${all.filter(s=>inJob(s)&&s.data.job.status==='done').length} <small>of ${all.filter(inJob).length}</small></b></div>
       <div class="stat"><span>Quote / visit</span><b>${gbp0(P.net)} <small>${S().vat?'+VAT':'no VAT'}</small></b></div>
     </div>
     <section class="card">
@@ -234,7 +245,7 @@ const PORTFOLIO = (()=>{
         <button class="btn" type="button" id="pfAdd">+ Add property</button>
       </div>
       <div class="pf-tbl"><table>
-        <thead><tr>${th('ref','#')}<th></th>${th('name','Property')}${th('type','Type')}${th('storeys','Storeys','r')}${th('len','Gutter m','r')}<th class="r">Downpipes</th><th>Access</th><th>Method</th><th>Condition</th>${th('status','Status')}<th>Missing</th>${th('hrs','Hours','r')}${th('price','Price','r')}</tr></thead>
+        <thead><tr>${th('ref','#')}<th></th>${th('name','Property')}${th('type','Type')}${th('storeys','Storeys','r')}${th('len','Gutter m','r')}<th class="r">Downpipes</th><th>Access</th><th>Method</th><th>Condition</th>${th('status','Survey')}${th('job','Job')}<th>Missing</th>${th('hrs','Hours','r')}${th('price','Price','r')}</tr></thead>
         <tbody>${rows.map(s=>{ const d = s.data, c = calc(s), st = statusOf(d.status), iss = issues(s), acc = ACCESS.filter(a=>d.access[a[0]]), im = s.photos.aerial || s.photos.street || s.photos.site[0], cond = CONDITIONS.find(x=>x[0]===d.condition);
           return `<tr data-id="${s.id}" class="${d.include===false||d.status==='noquote'?'off':''}">
           <td class="r">${esc(s.ref)}</td>
@@ -245,9 +256,10 @@ const PORTFOLIO = (()=>{
           <td><div class="pf-badges">${acc.length?acc.map(a=>`<span class="pf-b ${a[0]==='mewp'||a[0]==='tower'?'bad':'warn'}">${esc(a[1].split(' –')[0].split(' /')[0].split(' (')[0])}</span>`).join(''):'<span class="pf-b ok">None noted</span>'}</div>${d.accessNotes?`<small>${esc(d.accessNotes.slice(0,70))}</small>`:''}</td>
           <td>${esc(d.method)||'–'}</td><td>${cond&&d.condition!=='unknown'?esc(cond[1].split(' –')[0]):'–'}</td>
           <td><span class="pf-st"><i style="background:${st[2]}"></i>${st[1]}</span></td>
+          <td><span class="pf-st"><i style="background:${jobOf(d.job.status)[2]}"></i>${jobOf(d.job.status)[1]}</span>${d.job.status==='done'&&d.job.done?`<small>${fmtD(d.job.done)}</small>`:d.job.status==='booked'&&d.job.booked?`<small>${fmtD(d.job.booked)}</small>`:''}${s.photos.job.length?`<small>${s.photos.job.length} photo${s.photos.job.length>1?'s':''} · ${s.photos.job.filter(p=>p.share).length} shared</small>`:''}</td>
           <td><div class="pf-badges">${iss.length?iss.map(i=>`<span class="pf-b">${esc(i)}</span>`).join(''):'<span class="pf-b ok">Complete</span>'}</div></td>
           <td class="r">${c.hrs?c.hrs.toFixed(1):'–'}</td><td class="r"><b>${c.price?gbp0(c.price):'–'}</b></td></tr>`; }).join('')}</tbody>
-        <tfoot><tr><td></td><td></td><td>${rows.length} shown</td><td></td><td></td><td class="r">${Math.round(rows.reduce((a,s)=>a+totalLen(s.data),0))}</td><td class="r">${rows.reduce((a,s)=>a+num(s.data.downpipes),0)}</td><td colspan="5"></td><td class="r">${rows.reduce((a,s)=>a+calc(s).hrs,0).toFixed(1)}</td><td class="r">${gbp0(rows.filter(s=>s.data.include!==false&&s.data.status!=='noquote').reduce((a,s)=>a+calc(s).price,0))}</td></tr></tfoot>
+        <tfoot><tr><td></td><td></td><td>${rows.length} shown</td><td></td><td></td><td class="r">${Math.round(rows.reduce((a,s)=>a+totalLen(s.data),0))}</td><td class="r">${rows.reduce((a,s)=>a+num(s.data.downpipes),0)}</td><td colspan="6"></td><td class="r">${rows.reduce((a,s)=>a+calc(s).hrs,0).toFixed(1)}</td><td class="r">${gbp0(rows.filter(s=>s.data.include!==false&&s.data.status!=='noquote').reduce((a,s)=>a+calc(s).price,0))}</td></tr></tfoot>
       </table></div>
     </section>`;
     $('pfQ').oninput = e=>{ search = e.target.value; const p = e.target.selectionStart; renderSummary(box, P); const q = $('pfQ'); q.focus(); q.setSelectionRange(p,p); };
@@ -342,6 +354,7 @@ const PORTFOLIO = (()=>{
         </section>
       </div>
       <div class="col">
+        ${jobCard(s)}
         <section class="card pf-price" id="pfPrice">${priceBox(s, c)}</section>
         <section class="card"><div class="pf-maphead"><h3 style="margin:0">Live Google views</h3><span class="hint" style="margin:0">Drag to look around · <a href="${L.street}" target="_blank" rel="noopener">open in Google Maps ↗</a></span></div>
           <div class="pf-live"><div id="pfMap" class="pf-livebox"></div><div id="pfPano" class="pf-livebox"></div></div>
@@ -363,6 +376,33 @@ const PORTFOLIO = (()=>{
     <input type="file" id="pfFile" accept="image/*" multiple hidden>`;
     bindSite(s);
     liveViews(s);
+  }
+  function shareBtn(img, attr){ return `<button type="button" class="pf-rev pf-share ${img.share?'on':''}" ${attr} title="${img.share ? 'The customer can see this' + (img.sharedBy?' (ticked by '+esc(img.sharedBy)+')':'') + ' – click to hide it' : 'Hidden from the customer – click to let them see it'}"><span class="bx"></span>${img.share ? 'Customer can see' : 'Show customer'}</button>`; }
+  function fileRow(f, attr, rmAttr){ return `<div class="pf-file"><span class="pf-fi">${/\.pdf$/i.test(f.path||'')?'PDF':'IMG'}</span><a href="${esc(src(f))}" target="_blank" rel="noopener">${esc(f.name||'File')}</a><small>${fmtD(f.added)}${f.addedBy?' · '+esc(f.addedBy):''}</small>${shareBtn(f, attr)}<button type="button" class="pf-rm" ${rmAttr} title="Remove file">×</button></div>`; }
+  function jobCard(s){
+    const j = s.data.job, r = j.report, js = jobOf(j.status), ph = s.photos.job, fl = s.photos.files;
+    const stage = st => ph.map((p,ix)=>[p,ix]).filter(([p])=>(p.stage||'after')===st);
+    const gal = st => stage(st).map(([p,ix])=>`<div class="pf-ph ${p.share?'shared':''}"><span class="pf-stage">${st==='before'?'Before':'After'}</span><img src="${esc(src(p))}" data-full="${esc(p.path)}" alt="" loading="lazy">${shareBtn(p, `data-sharej="${ix}"`)}<button type="button" class="pf-rm" data-rmj="${ix}" title="Remove photo">×</button><input data-capj="${ix}" value="${esc(p.caption)}" placeholder="Caption (customer sees this)…"></div>`).join('');
+    return `<section class="card pf-job"><div class="pf-maphead"><h3 style="margin:0">Job &amp; customer report</h3><span class="pf-st"><i style="background:${js[2]}"></i>${js[1]}</span></div>
+      <div class="fields" style="margin-top:10px">
+        <label class="f">Job status<select data-j="status">${JOB_ST.map(x=>`<option value="${x[0]}" ${x[0]===(j.status||'')?'selected':''}>${x[1]}</option>`).join('')}</select></label>
+        <label class="f">Booked for<input type="date" data-j="booked" value="${esc(j.booked)}"></label>
+        <label class="f">Completed on<input type="date" data-j="done" value="${esc(j.done)}"></label>
+        ${j.status==='noaccess'?`<label class="f wide">Why we couldn't access (customer sees this)<input data-j="reason" value="${esc(j.reason)}" placeholder="e.g. Cars parked under the rear gutters, gate locked"></label>`:''}
+      </div>
+      <h4 class="pf-h4">Report</h4>
+      <label class="f">Work carried out<textarea data-jr="work" rows="2" placeholder="${esc(WORK_DEFAULT)}">${esc(r.work)}</textarea></label>
+      <div class="fields" style="margin-top:8px"><label class="f">Gutter condition found<select data-jr="condition">${opt(CONDITIONS.filter(c=>c[0]!=='unknown'), r.condition, '–')}</select></label></div>
+      <label class="f" style="margin-top:8px">Defects / issues found<textarea data-jr="issues" rows="2" placeholder="e.g. Cracked joint above flat 4 – see photo. Leave blank if none.">${esc(r.issues)}</textarea></label>
+      <label class="f" style="margin-top:8px">Recommendations<textarea data-jr="recommend" rows="2" placeholder="e.g. Replace downpipe guard at rear; quote to follow">${esc(r.recommend)}</textarea></label>
+      <label class="ck" style="margin-top:10px"><input type="checkbox" data-j="shareReport" ${j.shareReport?'checked':''}>Show this report to the customer</label>
+      <h4 class="pf-h4">Job photos <small>${ph.length} · ${ph.filter(p=>p.share).length} shown to customer</small></h4>
+      <div class="pf-lenbar"><button class="btn sm" type="button" data-pick="before">+ Before photos</button><button class="btn sm" type="button" data-pick="after">+ After photos</button><span class="hint" style="margin:0">Only photos ticked <b>Show customer</b> appear in their view.</span></div>
+      ${ph.length ? `<div class="pf-gal pf-jgal">${gal('before')}${gal('after')}</div>` : ''}
+      <h4 class="pf-h4">Reports &amp; files <small>PDF or image</small></h4>
+      <div class="pf-files">${fl.map((f,ix)=>fileRow(f, `data-sharef="${ix}"`, `data-rmf="${ix}"`)).join('') || '<p class="hint" style="margin:0">None yet.</p>'}</div>
+      <div class="pf-lenbar"><button class="btn sm" type="button" data-pick="file">+ Add file</button></div>
+    </section>`;
   }
   function priceBox(s, c){
     return `<h3 style="margin-top:0">Price for this property</h3>
@@ -392,9 +432,23 @@ const PORTFOLIO = (()=>{
     b.querySelectorAll('[data-rm]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); removeImg(s, 'site', +e.dataset.rm); }));
     b.querySelectorAll('[data-full]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); const lb = $('pfLb'); lb.querySelector('img').src = urls[e.dataset.full] || e.src; lb.hidden = false; }));
     $('pfLb').onclick = ()=> $('pfLb').hidden = true;
+    b.querySelectorAll('[data-j]').forEach(e=>{
+      const ev = (e.tagName==='SELECT' || e.type==='checkbox' || e.type==='date') ? 'change' : 'input';
+      e.addEventListener(ev, ()=>{
+        const k = e.dataset.j, j = s.data.job; j[k] = e.type==='checkbox' ? e.checked : e.value;
+        if(k==='status'){ if(j.status==='done' && !j.done) j.done = new Date().toISOString().slice(0,10); if(j.status==='done' && !j.report.work) j.report.work = WORK_DEFAULT; }
+        saveSite(s, ev==='input'?700:0); if(k==='status') render();
+      });
+    });
+    b.querySelectorAll('[data-jr]').forEach(e=> e.addEventListener(e.tagName==='SELECT'?'change':'input', ()=>{ s.data.job.report[e.dataset.jr] = e.value; saveSite(s, e.tagName==='SELECT'?0:700); }));
+    b.querySelectorAll('[data-capj]').forEach(e=> e.addEventListener('input', ()=>{ s.photos.job[+e.dataset.capj].caption = e.value; saveSite(s, 900); }));
+    b.querySelectorAll('[data-sharej]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); toggleShare(s, s.photos.job[+e.dataset.sharej]); }));
+    b.querySelectorAll('[data-sharef]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); toggleShare(s, s.photos.files[+e.dataset.sharef]); }));
+    b.querySelectorAll('[data-rmj]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); removeImg(s, 'job', +e.dataset.rmj); }));
+    b.querySelectorAll('[data-rmf]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); removeImg(s, 'files', +e.dataset.rmf); }));
     let pickKind = 'site';
-    b.querySelectorAll('[data-pick]').forEach(e=> e.addEventListener('click', ev=>{ ev.preventDefault(); ev.stopPropagation(); pickKind = e.dataset.pick; const f = $('pfFile'); f.multiple = pickKind==='site'; f.value = ''; f.click(); }));
-    $('pfFile').onchange = e=>{ if(e.target.files.length) addImages(s, pickKind, [...e.target.files]); };
+    b.querySelectorAll('[data-pick]').forEach(e=> e.addEventListener('click', ev=>{ ev.preventDefault(); ev.stopPropagation(); pickKind = e.dataset.pick; const f = $('pfFile'); f.multiple = pickKind!=='aerial' && pickKind!=='street'; f.accept = pickKind==='file' ? 'application/pdf,image/*' : 'image/*'; f.value = ''; f.click(); }));
+    $('pfFile').onchange = e=>{ if(!e.target.files.length) return; if(pickKind==='file') addFiles(s, [...e.target.files]); else addImages(s, pickKind, [...e.target.files]); };
     b.querySelectorAll('.pf-slot').forEach(el=>{
       el.addEventListener('click', ()=>{ armed = el.dataset.slot; b.querySelectorAll('.pf-slot').forEach(x=>x.classList.toggle('armed', x===el)); });
       el.addEventListener('focus', ()=>{ armed = el.dataset.slot; });
@@ -404,7 +458,7 @@ const PORTFOLIO = (()=>{
     });
     const del = $('pfDelSite'); if(del) del.onclick = async ()=>{
       if(!confirmInline('pfDel'+s.id, 'Press Delete property again to remove it and its photos.')) return;
-      const paths = imgs(s).map(x=>x.path).filter(Boolean);
+      const paths = allFiles(s).map(x=>x.path).filter(Boolean);
       const {error} = await sb.from('portfolio_sites').delete().eq('id', s.id); if(error){ flash('Could not delete: ' + error.message); return; }
       if(paths.length) sb.storage.from(BUCKET).remove(paths).catch(()=>{});
       delete sites[s.id]; siteId = null; tab = 'summary'; render(); flash('Property deleted');
@@ -422,10 +476,17 @@ const PORTFOLIO = (()=>{
     if(img.reviewed){ img.reviewedAt = new Date().toISOString(); img.reviewedBy = ME.name; } else { delete img.reviewedAt; delete img.reviewedBy; }
     saveSite(s, 0); render(); flash(img.reviewed ? 'Marked as reviewed' : 'Review removed');
   }
+  function toggleShare(s, img, save){
+    if(!img) return;
+    img.share = !img.share;
+    if(img.share){ img.sharedAt = new Date().toISOString(); img.sharedBy = ME.name; } else { delete img.sharedAt; delete img.sharedBy; }
+    (save || (()=>saveSite(s, 0)))(); render(); flash(img.share ? 'The customer can now see this' : 'Hidden from the customer');
+  }
   async function removeImg(s, kind, ix){
-    const img = kind==='site' ? s.photos.site[ix] : s.photos[kind]; if(!img) return;
-    if(!confirmInline('pfRm'+(img.path||ix), 'Press again to remove this image.')) return;
-    if(kind==='site') s.photos.site.splice(ix, 1); else s.photos[kind] = null;
+    const isList = kind==='site' || kind==='job' || kind==='files';
+    const img = isList ? s.photos[kind][ix] : s.photos[kind]; if(!img) return;
+    if(!confirmInline('pfRm'+(img.path||ix), kind==='files' ? 'Press again to remove this file.' : 'Press again to remove this image.')) return;
+    if(isList) s.photos[kind].splice(ix, 1); else s.photos[kind] = null;
     saveSite(s, 0); if(img.path) sb.storage.from(BUCKET).remove([img.path]).catch(()=>{});
     render(); flash('Image removed');
   }
@@ -445,19 +506,36 @@ const PORTFOLIO = (()=>{
     return {path, caption:'', added:new Date().toISOString(), addedBy:ME.name};
   }
   async function addImages(s, kind, files, quiet){
-    if(kind!=='site') files = files.slice(0,1);
+    const many = kind==='site' || kind==='before' || kind==='after';
+    if(!many) files = files.slice(0,1);
     saveStatus('Uploading…'); if(!quiet) flash(files.length>1 ? `Uploading ${files.length} photos…` : 'Uploading…');
     let n = 0;
     for(const f of files){
       try{
         const rec = await uploadImg(s, kind, await shrink(f));
         if(kind==='site') s.photos.site.push(rec);
+        else if(kind==='before' || kind==='after'){ rec.stage = kind; s.photos.job.push(rec); }
         else { const old = s.photos[kind]; s.photos[kind] = rec; if(old && old.path) sb.storage.from(BUCKET).remove([old.path]).catch(()=>{}); }
         n++;
       }catch(e){ console.error(e); flash('Upload failed: ' + (e.message||e)); }
     }
     if(n){ saveSite(s, 0); if(!quiet){ render(); flash(n>1 ? `${n} photos added` : 'Photo added'); } }
     return n;
+  }
+  // PDFs and other documents (reports, certificates, RAMS). Stored as-is, shown to the customer only when ticked.
+  async function uploadFile(folder, file){
+    const ext = (file.name.match(/\.(pdf|jpe?g|png|webp)$/i)||['','pdf'])[1].toLowerCase();
+    if(!/pdf|jpe?g|png|webp/.test(ext) || file.size > 20*1024*1024) throw new Error(`${file.name}: only PDFs or images up to 20 MB`);
+    const path = `${cur.id}/${folder}/file-${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+    const type = ext==='pdf' ? 'application/pdf' : ext==='png' ? 'image/png' : ext==='webp' ? 'image/webp' : 'image/jpeg';
+    const {error} = await sb.storage.from(BUCKET).upload(path, file, {contentType:type, upsert:false}); if(error) throw error;
+    const {data} = await sb.storage.from(BUCKET).createSignedUrl(path, 60*60*6); if(data) urls[path] = data.signedUrl;
+    return {path, name:file.name.replace(/\.[^.]+$/, '').slice(0,100), added:new Date().toISOString(), addedBy:ME.name, share:false};
+  }
+  async function addFiles(s, files){
+    saveStatus('Uploading…'); let n = 0;
+    for(const f of files){ try{ s.photos.files.push(await uploadFile(s.id, f)); n++; }catch(e){ flash('Upload failed: ' + (e.message||e)); } }
+    if(n){ saveSite(s, 0); render(); flash(n>1 ? `${n} files added` : 'File added'); } else saveStatus('All changes saved');
   }
   document.addEventListener('paste', e=>{
     if(root().hidden || tab!=='site' || !siteId) return;
@@ -496,7 +574,7 @@ const PORTFOLIO = (()=>{
     }catch(e){ msg(e.message || String(e)); }
   }
   /* ---------- customer quote ---------- */
-  function quoteHTML(){
+  function quoteHTML(opts={}){
     const P = portfolioTotals(), st = S(), today = new Date(), valid = new Date(today.getTime() + num(st.validDays||30)*864e5);
     const fmt = d => d.toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'});
     const freqL = (FREQ[st.freq]||FREQ.once)[0];
@@ -526,7 +604,7 @@ const PORTFOLIO = (()=>{
         <div class="g"><span>Total per visit</span><span>${gbp(P.gross)}</span></div>
         ${P.visits>1?`<div><span>${P.visits} visits per year</span><b>${gbp(P.annual)} / year</b></div>`:''}
       </div>
-      ${st.showPhotos?`<h3>Property survey images</h3><div class="pf-q-props">${P.priced.map(s=>`<div class="pf-q-prop"><div class="imgs">${okImg(s.photos.aerial)?`<img src="${esc(src(s.photos.aerial))}" alt="">`:'<div class="no">No aerial</div>'}${okImg(s.photos.street)?`<img src="${esc(src(s.photos.street))}" alt="">`:'<div class="no">No street view</div>'}</div><div class="tx"><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><br>${calc(s).m.toFixed(0)} m gutter · ${esc(s.data.storeys||'?')} storey${num(s.data.storeys)===1?'':'s'}${s.data.method?' · '+esc(s.data.method):''}</div></div>`).join('')}</div><p class="pf-q-small">Aerial and Street View imagery © Google.</p>`:''}
+      ${st.showPhotos && !opts.noPhotos?`<h3>Property survey images</h3><div class="pf-q-props">${P.priced.map(s=>`<div class="pf-q-prop"><div class="imgs">${okImg(s.photos.aerial)?`<img src="${esc(src(s.photos.aerial))}" alt="">`:'<div class="no">No aerial</div>'}${okImg(s.photos.street)?`<img src="${esc(src(s.photos.street))}" alt="">`:'<div class="no">No street view</div>'}</div><div class="tx"><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><br>${calc(s).m.toFixed(0)} m gutter · ${esc(s.data.storeys||'?')} storey${num(s.data.storeys)===1?'':'s'}${s.data.method?' · '+esc(s.data.method):''}</div></div>`).join('')}</div><p class="pf-q-small">Aerial and Street View imagery © Google.</p>`:''}
       <h3>Terms</h3>
       <ul class="pf-q-small"><li>Prices are per visit and include all labour, equipment and waste removal. Quotation valid for ${num(st.validDays||30)} days.</li>
         <li>Properties may be accepted individually or as a portfolio${P.disc?`; the portfolio discount applies when ${num(st.discMin)} or more properties are booked`:''}.</li>
@@ -577,6 +655,116 @@ const PORTFOLIO = (()=>{
     });
   }
 
+  /* ---------- customer access ---------- */
+  async function fn(body){
+    const {data, error} = await sb.functions.invoke('customer-accounts', {body});
+    if(error){ let m = error.message; try{ const j = await error.context.json(); if(j && j.error) m = j.error; }catch(e){} throw new Error(m); }
+    if(data && data.error) throw new Error(data.error);
+    return data;
+  }
+  let custCache = null, lastLogin = null;
+  function loginText(l){ return `Your Purgō customer login\n\nWebsite: ${location.origin}\nEmail: ${l.email}\nPassword: ${l.password}\n\nSign in to see progress, photos and reports for ${cur.client||cur.name}. You can change your password after signing in.`; }
+  function savePortfolioFiles(){ queue('pf:'+cur.id, async ()=>{ const {error} = await sb.from('portfolios').update({files:cur.files}).eq('id', cur.id); if(error) throw error; }, 0); }
+  function renderCustomer(box){
+    cur.files = Array.isArray(cur.files) ? cur.files : [];
+    const all = sorted(), job = all.filter(inJob);
+    const shownPh = job.reduce((a,s)=>a+s.photos.job.filter(p=>p.share).length, 0), allPh = job.reduce((a,s)=>a+s.photos.job.length, 0);
+    const reps = job.filter(s=>s.data.job.shareReport).length, done = job.filter(s=>s.data.job.status==='done').length;
+    const q = cur.customer_quote;
+    box.innerHTML = `<div class="pf-set">
+      <section class="card"><h2>What the customer sees</h2>
+        <p class="hint">Customers sign in at <b>${esc(location.origin)}</b> with their own login and see only this portfolio: each property's job status and dates, the reports you tick, the job photos and files you tick, portfolio documents you tick, and the quote once you share it. They never see survey status, internal notes, access notes, price workings or anything unticked.</p>
+        <div class="pf-stats" style="margin:12px 0 4px">
+          <div class="stat"><span>Properties in the job</span><b>${job.length}</b></div>
+          <div class="stat"><span>Completed</span><b>${done} <small>of ${job.length}</small></b></div>
+          <div class="stat"><span>Photos shown</span><b>${shownPh} <small>of ${allPh}</small></b></div>
+          <div class="stat"><span>Reports shown</span><b>${reps}</b></div>
+          <div class="stat"><span>Quote</span><b style="font-size:.9rem">${q?'Shared':'Not shared'}</b></div>
+        </div>
+        <p class="hint">Properties marked <b>Not in this job</b>, excluded from the quote, or not ticked to include are hidden from the customer.</p>
+        <div class="pf-tools" style="margin-top:10px"><span style="flex:1"></span><button class="btn pri" type="button" id="pfPreview">Preview as the customer</button></div>
+      </section>
+      <section class="card"><h2>Customer logins</h2>
+        ${ROLE==='admin' ? `
+        <div id="pfCustList"><p class="hint">Loading…</p></div>
+        <h3>Add a login</h3>
+        <div class="fields"><label class="f">Name<input id="pfCuName" placeholder="e.g. Sarah Jones"></label><label class="f">Email<input id="pfCuEmail" type="email" placeholder="sarah@pureblock.co.uk"></label></div>
+        <div class="pf-tools" style="margin-top:10px"><span class="hint" style="flex:1;margin:0">Makes a login with a temporary password for you to send them. Someone who already has a customer login is just given access to this portfolio too.</span><button class="btn pri" type="button" id="pfCuAdd">Create login</button></div>
+        <div id="pfCuNew"></div>` : `<p class="note w">Only an admin can add or remove customer logins.</p>`}
+      </section>
+      <section class="card"><h2>Quote shown to the customer</h2>
+        <p class="hint">${q ? `Shared on ${fmtD(q.publishedAt)}${q.publishedBy?' by '+esc(q.publishedBy):''}. The customer sees that version until you share it again – later price changes don't reach them on their own.` : 'Not shared. When you share it, the customer sees the quote as it stands now (without the survey images).'}</p>
+        <div class="pf-tools" style="margin-top:10px"><span style="flex:1"></span>${q?`<button class="btn" type="button" id="pfQUn">Stop sharing</button>`:''}<button class="btn pri" type="button" id="pfQPub">${q?'Share the current quote again':'Share the quote'}</button></div>
+      </section>
+      <section class="card"><h2>Portfolio documents</h2>
+        <p class="hint">For the whole portfolio – RAMS, insurance certificate, a summary report. Files for one property go on that property's page.</p>
+        <div class="pf-files">${cur.files.map((f,ix)=>fileRow(f, `data-psh="${ix}"`, `data-prm="${ix}"`)).join('') || '<p class="hint" style="margin:0">None yet.</p>'}</div>
+        <div class="pf-lenbar"><button class="btn sm" type="button" id="pfPAdd">+ Add document</button><input type="file" id="pfPFile" accept="application/pdf,image/*" multiple hidden></div>
+      </section></div>`;
+    $('pfPreview').onclick = ()=>{ if(typeof PORTAL==='undefined'){ flash('Customer view is not available'); return; } PORTAL.preview(cur.id); };
+    $('pfQPub').onclick = async ()=>{
+      const rec = {html:quoteHTML({noPhotos:true}), publishedAt:new Date().toISOString(), publishedBy:ME.name};
+      const {error} = await sb.from('portfolios').update({customer_quote:rec}).eq('id', cur.id);
+      if(error){ flash('Not shared: ' + error.message); return; }
+      cur.customer_quote = rec; render(); flash('The customer can now see the quote');
+    };
+    const un = $('pfQUn'); if(un) un.onclick = async ()=>{
+      if(!confirmInline('pfQUn', 'Press Stop sharing again to hide the quote from the customer.')) return;
+      const {error} = await sb.from('portfolios').update({customer_quote:null}).eq('id', cur.id);
+      if(error){ flash('Not changed: ' + error.message); return; }
+      cur.customer_quote = null; render(); flash('Quote hidden from the customer');
+    };
+    $('pfPAdd').onclick = ()=>{ const f = $('pfPFile'); f.value = ''; f.click(); };
+    $('pfPFile').onchange = async e=>{
+      let n = 0; for(const f of [...e.target.files]){ try{ cur.files.push(await uploadFile('_portfolio', f)); n++; }catch(x){ flash('Upload failed: ' + (x.message||x)); } }
+      if(n){ savePortfolioFiles(); render(); flash(n>1?`${n} documents added`:'Document added'); }
+    };
+    box.querySelectorAll('[data-psh]').forEach(b=> b.onclick = ()=> toggleShare(null, cur.files[+b.dataset.psh], savePortfolioFiles));
+    box.querySelectorAll('[data-prm]').forEach(b=> b.onclick = ()=>{
+      const f = cur.files[+b.dataset.prm]; if(!f || !confirmInline('pfPrm'+f.path, 'Press again to remove this document.')) return;
+      cur.files.splice(+b.dataset.prm, 1); savePortfolioFiles(); sb.storage.from(BUCKET).remove([f.path]).catch(()=>{}); render(); flash('Document removed');
+    });
+    if(ROLE!=='admin') return;
+    if(lastLogin && lastLogin.pid===cur.id) showNewLogin(lastLogin);
+    loadCustomers();
+    $('pfCuAdd').onclick = async ()=>{
+      const name = $('pfCuName').value.trim(), email = $('pfCuEmail').value.trim();
+      if(!email){ flash('Enter their email address'); return; }
+      const b = $('pfCuAdd'); b.disabled = true; b.textContent = 'Creating…';
+      try{
+        const r = await fn({action:'create', portfolioId:cur.id, email, name});
+        if(r.password){ lastLogin = {pid:cur.id, email:email.toLowerCase(), password:r.password, name}; showNewLogin(lastLogin); flash('Login created'); }
+        else { lastLogin = null; $('pfCuNew').innerHTML = `<p class="note g">${esc(email)} already had a customer login. They can now see this portfolio too with their existing password.</p>`; flash('Access added'); }
+        $('pfCuName').value = ''; $('pfCuEmail').value = ''; loadCustomers();
+      }catch(e){ flash(e.message); $('pfCuNew').innerHTML = `<p class="note b">${esc(e.message)}</p>`; }
+      b.disabled = false; b.textContent = 'Create login';
+    };
+  }
+  function showNewLogin(l){
+    const el = $('pfCuNew'); if(!el) return;
+    el.innerHTML = `<div class="pf-login"><b>Send these details to ${esc(l.name||l.email)}</b><pre>${esc(loginText(l))}</pre><p class="hint" style="margin:6px 0 0">The password is only shown now. If it gets lost, press <b>New password</b> next to their name.</p>
+      <div class="pf-tools" style="margin-top:8px"><span style="flex:1"></span>${l.email?`<a class="btn" href="mailto:${esc(l.email)}?subject=${encodeURIComponent('Your Purgō customer login')}&body=${encodeURIComponent(loginText(l))}">Open in email</a>`:''}<button class="btn pri" type="button" id="pfCuCopy">Copy</button></div></div>`;
+    $('pfCuCopy').onclick = async ()=>{ try{ await navigator.clipboard.writeText(loginText(l)); flash('Copied'); }catch(e){ flash('Copy was blocked by the browser'); } };
+  }
+  async function loadCustomers(){
+    const el = $('pfCustList'); if(!el) return;
+    try{
+      const r = await fn({action:'list', portfolioId:cur.id}); custCache = r.customers || [];
+      if(!$('pfCustList')) return;
+      $('pfCustList').innerHTML = custCache.length ? `<div class="qlist">${custCache.map(c=>`<div class="qitem"><div class="m"><b>${esc(c.name||c.email)}</b><small>${esc(c.email)}${c.active?'':' · switched off'}</small><small>${c.lastSignIn?'Last signed in '+fmtD(c.lastSignIn):'Not signed in yet'} · added ${fmtD(c.added)}${c.addedBy?' by '+esc(c.addedBy):''}</small></div><span></span><div class="qacts"><button class="btn sm" type="button" data-cureset="${c.userId}">New password</button><button class="btn sm del" type="button" data-curm="${c.userId}">Remove</button></div></div>`).join('')}</div>` : '<p class="hint">No customer logins yet.</p>';
+      $('pfCustList').querySelectorAll('[data-cureset]').forEach(b=> b.onclick = async ()=>{
+        const c = custCache.find(x=>x.userId===b.dataset.cureset);
+        if(!confirmInline('cur'+c.userId, `Press New password again to replace ${c.name||c.email}'s password.`)) return;
+        try{ const r = await fn({action:'reset', userId:c.userId}); lastLogin = {pid:cur.id, email:c.email, password:r.password, name:c.name}; showNewLogin(lastLogin); flash('New password made'); }catch(e){ flash(e.message); }
+      });
+      $('pfCustList').querySelectorAll('[data-curm]').forEach(b=> b.onclick = async ()=>{
+        const c = custCache.find(x=>x.userId===b.dataset.curm);
+        if(!confirmInline('curm'+c.userId, `Press Remove again to stop ${c.name||c.email} seeing this portfolio.`)) return;
+        try{ const r = await fn({action:'remove', portfolioId:cur.id, userId:c.userId}); flash(r.switchedOff ? 'Removed – their login is switched off' : 'Removed from this portfolio'); loadCustomers(); }catch(e){ flash(e.message); }
+      });
+    }catch(e){ if($('pfCustList')) $('pfCustList').innerHTML = `<p class="note b">Could not load customer logins: ${esc(e.message)}</p>`; }
+  }
+
   /* ---------- settings & import ---------- */
   function renderSettings(box){
     const st = S();
@@ -607,7 +795,7 @@ const PORTFOLIO = (()=>{
         <div class="pf-tools" style="margin-top:8px"><span class="hint" id="pfImpN" style="flex:1;margin:0"></span><button class="btn pri" type="button" id="pfImpGo">Add to portfolio</button></div>
       </section>
       <section class="card"><h2>Import photos</h2>
-        <p class="hint">Pick many images at once. Files named with the property number and type – e.g. <b>07_aerial.jpg</b>, <b>07_street.jpg</b>, <b>07_site_1.jpg</b> – go straight onto that property.</p>
+        <p class="hint">Pick many images at once. Files named with the property number and type – e.g. <b>07_aerial.jpg</b>, <b>07_street.jpg</b>, <b>07_site_1.jpg</b> – go straight onto that property. Job photos: <b>07_before_1.jpg</b>, <b>07_after_1.jpg</b> (hidden from the customer until ticked).</p>
         <input type="file" id="pfImgImp" accept="image/*" multiple>
         <p class="hint" id="pfImgMsg"></p>
       </section></div>`;
@@ -628,7 +816,7 @@ const PORTFOLIO = (()=>{
       const files = [...e.target.files]; const msg = $('pfImgMsg'); let ok = 0, skip = [];
       const byRef = {}; Object.values(sites).forEach(s=>byRef[num(s.ref)] = s);
       for(let i=0;i<files.length;i++){
-        const f = files[i], m = f.name.match(/(\d+)[ _-]*(aerial|street|site)/i);
+        const f = files[i], m = f.name.match(/(\d+)[ _-]*(aerial|street|site|before|after)/i);
         const s = m && byRef[+m[1]]; if(!s){ skip.push(f.name); continue; }
         msg.textContent = `Uploading ${i+1} of ${files.length}…`;
         ok += await addImages(s, m[2].toLowerCase(), [f], true);
@@ -638,7 +826,7 @@ const PORTFOLIO = (()=>{
     };
     const dp = $('pfDelP'); if(dp) dp.onclick = async ()=>{
       if(!confirmInline('pfDelP', 'Press Delete this portfolio again to delete it, all its properties and photos.')) return;
-      const paths = Object.values(sites).flatMap(s=>imgs(s).map(x=>x.path)).filter(Boolean);
+      const paths = [...Object.values(sites).flatMap(s=>allFiles(s).map(x=>x.path)), ...(cur.files||[]).map(x=>x.path)].filter(Boolean);
       const {error} = await sb.from('portfolios').delete().eq('id', cur.id); if(error){ flash('Could not delete: ' + error.message); return; }
       for(let i=0;i<paths.length;i+=100) await sb.storage.from(BUCKET).remove(paths.slice(i,i+100)).catch(()=>{});
       try{ sessionStorage.removeItem('pfCur'); }catch(x){} flash('Portfolio deleted'); await loadList(); renderList();

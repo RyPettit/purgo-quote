@@ -927,7 +927,7 @@ const round2 = n => Math.round((+n||0)*100)/100;
   document.addEventListener('visibilitychange', start);
   start();
 })();
-const VIEWS = ['login','quote','quotes','portfolio','admin','measure'];
+const VIEWS = ['login','quote','quotes','portfolio','portal','admin','measure'];
 const isNetErr = e => !navigator.onLine || /fetch|network|Failed to fetch|Load failed/i.test(String(e && (e.message||e)));
 
 function syncEditing(){
@@ -935,16 +935,20 @@ function syncEditing(){
   const s = $('saveQ'); if(s) s.textContent = editing ? 'Update quote' : 'Save quote';
 }
 function show(view){
+  if(ROLE==='customer' && view!=='login') view = 'portal';           // customers only ever see their portal
+  if(view==='portal' && ROLE!=='customer' && !(typeof PORTAL!=='undefined' && PORTAL.isPreview())) view = 'portfolio';
   if(view==='admin' && ROLE!=='admin') view = 'quote';
   if(view==='measure' && !window.PURGO_MEASURE) view = 'quote';
   if(!ME && view!=='login') view = 'login';
   VIEWS.forEach(v=> $('view-'+v).hidden = v!==view);
   document.querySelectorAll('.nav button[data-view]').forEach(b=>b.classList.toggle('on', b.dataset.view===view));
-  $('nav').hidden = !ME; $('tbUser').hidden = !ME;
+  $('nav').hidden = !ME || ROLE==='customer'; $('tbUser').hidden = !ME;
+  $('net').hidden = ROLE==='customer';
   if(view!=='login' && location.hash!=='#'+view) history.replaceState(null,'','#'+view);
   if(view==='quotes') loadQuotes();
   if(view==='admin') loadStaff();
   if(view==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.onShow();
+  if(view==='portal' && typeof PORTAL!=='undefined') PORTAL.onShow();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
@@ -963,7 +967,7 @@ function updateNet(){
   n.classList.toggle('off', !navigator.onLine);
   n.textContent = navigator.onLine ? (q ? `${q} to upload` : 'Online') : (q ? `Offline · ${q} waiting` : 'Offline');
 }
-window.addEventListener('online', ()=>{ updateNet(); flushOutbox(); if(ME) loadPriceBook().catch(()=>{}); });
+window.addEventListener('online', ()=>{ updateNet(); if(ROLE==='customer') return; flushOutbox(); if(ME) loadPriceBook().catch(()=>{}); });
 window.addEventListener('offline', updateNet);
 async function flushOutbox(){
   if(!sb || !ME || !navigator.onLine) return;
@@ -1007,9 +1011,10 @@ $('signOut').onclick = async ()=>{
   if(ME) LS.del('purgoPB:'+ME.id);
   LS.del('purgoAddr'); LS.del('purgoQuotes'); quotes = []; addresses = []; quotesLoaded = false;
   if(typeof PORTFOLIO!=='undefined') PORTFOLIO.reset();
+  if(typeof PORTAL!=='undefined') PORTAL.reset();
   $('newJob').click(); $('on-gt').checked = false; $('on-wn').checked = false; $('on-rf').checked = false; $('on-pw').checked = true; syncSvc();
   await sb.auth.signOut().catch(()=>{});
-  ME = null; ROLE = null; document.body.classList.remove('is-admin');
+  ME = null; ROLE = null; document.body.classList.remove('is-admin','is-customer');
   show('login');
 };
 const _confirm = {};
@@ -1019,14 +1024,23 @@ async function enter(user){
   ME = {id:user.id, email:user.email, name:user.email.split('@')[0]};
   let prof = null;
   try{
-    const {data, error} = await sb.from('profiles').select('name,role,active').eq('id', user.id).maybeSingle();
+    const {data, error} = await sb.rpc('my_profile');
     if(error) throw error; prof = data; if(prof) LS.set('purgoMe:'+user.id, prof);
   }catch(e){ prof = LS.get('purgoMe:'+user.id, null); }
   if(prof && !prof.active){ await sb.auth.signOut(); ME = null; show('login'); loginMsg('Your account is switched off. Ask Purgō to switch it back on.'); return; }
   if(prof && prof.name) ME.name = prof.name;
   $('who').textContent = ME.name;
+  if(prof && prof.role==='customer'){                 // customer login: their portal only, no prices or staff data
+    ROLE = 'customer'; document.body.classList.add('is-customer'); document.body.classList.remove('is-admin');
+    show('portal'); return;
+  }
+  document.body.classList.remove('is-customer');
   try{ await loadPriceBook(); }
-  catch(e){ ME = null; show('login'); loginMsg(e.message || 'Could not load the price list.'); return; }
+  catch(e){
+    // a customer login that slipped past the check above (e.g. no saved details offline): send it to the portal
+    try{ const {data:me} = await sb.rpc('my_profile'); if(me && me.role==='customer' && me.active){ LS.set('purgoMe:'+user.id, me); return enter(user); } }catch(x){}
+    ME = null; show('login'); loginMsg(e.message || 'Could not load the price list.'); return;
+  }
   loadAddresses();
   updateNet(); flushOutbox();
   makeRef();
@@ -1328,7 +1342,7 @@ document.addEventListener('click', async e=>{
 /* ---------- staff admin ---------- */
 async function loadStaff(){
   if(ROLE!=='admin') return;
-  const {data, error} = await sb.from('profiles').select('id,email,name,role,active,created_at').order('created_at');
+  const {data, error} = await sb.from('profiles').select('id,email,name,role,active,created_at').neq('role','customer').order('created_at');
   if(error){ $('staffList').innerHTML = `<p class="note w">Could not load staff: ${esc(error.message)}</p>`; return; }
   staff = data;
   $('staffList').innerHTML = data.map(p=>{
@@ -1360,7 +1374,7 @@ async function boot(){
   if(!sb){ show('login'); $('loginForm').hidden = true; loginMsg('This app is not connected to its database yet. Add the Supabase details to config.js.'); return; }
   sb.auth.onAuthStateChange((ev, session)=>{
     if(ev==='PASSWORD_RECOVERY'){ show('login'); $('loginForm').hidden = true; $('resetForm').hidden = false; loginMsg(); }
-    if(ev==='SIGNED_OUT' && ME){ ME = null; ROLE = null; document.body.classList.remove('is-admin'); show('login'); }
+    if(ev==='SIGNED_OUT' && ME){ ME = null; ROLE = null; document.body.classList.remove('is-admin','is-customer'); if(typeof PORTAL!=='undefined') PORTAL.reset(); show('login'); }
   });
   const {data:{session}} = await sb.auth.getSession();
   if(session && !/type=recovery/.test(location.hash)) await enter(session.user);
