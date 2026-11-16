@@ -139,3 +139,15 @@ where id = 'portfolio-photos';
 drop policy if exists portfolio_photos_customer_read on storage.objects;
 create policy portfolio_photos_customer_read on storage.objects for select to authenticated
   using (bucket_id = 'portfolio-photos' and public.customer_can_see_file(name));
+
+-- 5. Profiles: only staff read the profiles table. Everyone reads their own details through
+--    my_profile(). (This also keeps customers out of the AI measuring function, which checks
+--    the caller's profile row with their own token.)
+create or replace function public.my_profile() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('name', name, 'role', role, 'active', active) from profiles where id = auth.uid()
+$$;
+revoke execute on function public.my_profile() from public, anon;
+grant execute on function public.my_profile() to authenticated;
+drop policy if exists profiles_read on public.profiles;
+create policy profiles_read on public.profiles for select to authenticated using (public.is_staff());

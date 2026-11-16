@@ -1024,7 +1024,7 @@ async function enter(user){
   ME = {id:user.id, email:user.email, name:user.email.split('@')[0]};
   let prof = null;
   try{
-    const {data, error} = await sb.from('profiles').select('name,role,active').eq('id', user.id).maybeSingle();
+    const {data, error} = await sb.rpc('my_profile');
     if(error) throw error; prof = data; if(prof) LS.set('purgoMe:'+user.id, prof);
   }catch(e){ prof = LS.get('purgoMe:'+user.id, null); }
   if(prof && !prof.active){ await sb.auth.signOut(); ME = null; show('login'); loginMsg('Your account is switched off. Ask Purgō to switch it back on.'); return; }
