@@ -1036,7 +1036,11 @@ async function enter(user){
   }
   document.body.classList.remove('is-customer');
   try{ await loadPriceBook(); }
-  catch(e){ ME = null; show('login'); loginMsg(e.message || 'Could not load the price list.'); return; }
+  catch(e){
+    // a customer login that slipped past the check above (e.g. no saved details offline): send it to the portal
+    try{ const {data:me} = await sb.rpc('my_profile'); if(me && me.role==='customer' && me.active){ LS.set('purgoMe:'+user.id, me); return enter(user); } }catch(x){}
+    ME = null; show('login'); loginMsg(e.message || 'Could not load the price list.'); return;
+  }
   loadAddresses();
   updateNet(); flushOutbox();
   makeRef();
