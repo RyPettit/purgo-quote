@@ -1,9 +1,9 @@
 // Which database the app uses is decided by the web address, so the dev site can never touch live data.
-// Live: quote.purgo-clean.com and purgo-quote.pages.dev. Everything else (dev.purgo-quote.pages.dev,
+// Live: portal.purgo-clean.com, quote.purgo-clean.com (old address) and purgo-quote.pages.dev. Everything else (dev.purgo-quote.pages.dev,
 // preview links, this computer) uses the separate dev database.
 // The anon / publishable keys are designed to be public; access is controlled by the database rules.
 (function(){
-  const LIVE_HOSTS = ['quote.purgo-clean.com', 'purgo-quote.pages.dev'];
+  const LIVE_HOSTS = ['portal.purgo-clean.com', 'quote.purgo-clean.com', 'purgo-quote.pages.dev'];
   const live = LIVE_HOSTS.includes(location.hostname);
   window.PURGO_DEV = !live;
   window.PURGO_CONFIG = live ? {
