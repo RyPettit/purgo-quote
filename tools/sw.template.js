@@ -1,4 +1,4 @@
-// Purgō Quote service worker: lets the app open and quote with no signal.
+// Purgō Portal service worker: lets the app open and quote with no signal.
 // Network first, cache as fallback, so a new release is picked up straight away
 // and the last good copy is used when there is no signal.
 const VERSION = 'purgo-__VERSION__';

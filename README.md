@@ -1,4 +1,4 @@
-# Purgō Quote
+# Purgō Portal
 
 Quoting tool for Purgō exterior cleaning. Staff sign in, build quotes from the
 shared price list and save them; only the admin can see costs and profit or
@@ -6,7 +6,7 @@ change prices.
 
 - **Hosting:** Cloudflare Pages, built straight from this repository (no build step).
 - **Database and logins:** Supabase. Two separate projects:
-  - **Live** `purgo` (London) — used by quote.purgo-clean.com and purgo-quote.pages.dev.
+  - **Live** `purgo` (London) — used by portal.purgo-clean.com (and the old quote.purgo-clean.com) and purgo-quote.pages.dev.
   - **Dev** (Ireland) — used by dev.purgo-quote.pages.dev, preview links and local testing.
     Started as a full copy of live on 1 Nov 2026; nothing done on dev reaches live.
   `config.js` picks the database from the web address, so the two can't be mixed up.
