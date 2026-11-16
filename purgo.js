@@ -927,7 +927,7 @@ const round2 = n => Math.round((+n||0)*100)/100;
   document.addEventListener('visibilitychange', start);
   start();
 })();
-const VIEWS = ['login','quote','quotes','admin','measure'];
+const VIEWS = ['login','quote','quotes','portfolio','admin','measure'];
 const isNetErr = e => !navigator.onLine || /fetch|network|Failed to fetch|Load failed/i.test(String(e && (e.message||e)));
 
 function syncEditing(){
@@ -944,6 +944,7 @@ function show(view){
   if(view!=='login' && location.hash!=='#'+view) history.replaceState(null,'','#'+view);
   if(view==='quotes') loadQuotes();
   if(view==='admin') loadStaff();
+  if(view==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.onShow();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
@@ -1005,6 +1006,7 @@ $('signOut').onclick = async ()=>{
   if(outbox().length && !confirmInline('signOut', 'Quotes are still waiting to upload. Tap Sign out again to sign out anyway.')) return;
   if(ME) LS.del('purgoPB:'+ME.id);
   LS.del('purgoAddr'); LS.del('purgoQuotes'); quotes = []; addresses = []; quotesLoaded = false;
+  if(typeof PORTFOLIO!=='undefined') PORTFOLIO.reset();
   $('newJob').click(); $('on-gt').checked = false; $('on-wn').checked = false; $('on-rf').checked = false; $('on-pw').checked = true; syncSvc();
   await sb.auth.signOut().catch(()=>{});
   ME = null; ROLE = null; document.body.classList.remove('is-admin');

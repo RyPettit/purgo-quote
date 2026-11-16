@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Quote">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=aaef68761e">
+<link rel="stylesheet" href="purgo.css?v=45185bef41">
 </head>
 <body>
 <header class="topbar">
@@ -22,6 +22,7 @@
     <nav class="nav" id="nav" hidden>
       <button type="button" data-view="quote">Quote</button>
       <button type="button" data-view="quotes">Saved quotes</button>
+      <button type="button" data-view="portfolio">Portfolios</button>
       <button type="button" data-view="measure" class="measure-only">Measure</button>
       <button type="button" data-view="admin" class="admin-only">Admin</button>
     </nav>
@@ -281,6 +282,9 @@
   </section>
 </main>
 
+<!-- PORTFOLIOS (filled by portfolio.js?v=aa1e496427) -->
+<main id="view-portfolio" class="wrap" hidden></main>
+
 <!-- MEASURE (dev) -->
 <main id="view-measure" class="wrap" hidden>
   <div class="viewbar"><div><h2 class="vtitle">Measure <span class="tag">Test</span></h2><p class="sub">Put the cross on the customer's house, choose the property type, then press AI outline. Drag the dots to correct it; the figures update as you go.</p></div>
@@ -399,7 +403,8 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=82c0175091"></script>
-<script src="measure.js?v=6c2553c5bc"></script>
+<script src="purgo.js?v=f0874de4ee"></script>
+<script src="measure.js?v=4261ddd8de"></script>
+<script src="portfolio.js?v=aa1e496427"></script>
 </body>
 </html>

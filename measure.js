@@ -17,6 +17,7 @@ const MEASURE = (()=>{
   let kind = 'patio', target = null, drawing = null, delMode = false, splitPts = null, splitLine = null;
   let shapes = [];        // {id, label, type:'area'|'line', kind, source, pitch, obj}
   let suggestions = null, lastNotes = '';
+  let ext = null, savedQuote = null; // ext: measuring for something other than the open quote (e.g. a portfolio property)
   let seq = 0;
 
   const el = id => document.getElementById(id);
@@ -194,6 +195,7 @@ const MEASURE = (()=>{
   }
   const SURF_NAME = k => ({block:'Block paving',concrete:'Concrete',tarmac:'Tarmac',stone:'Natural stone',imprint:'Imprinted concrete',porcelain:'Porcelain',deck:'Decking',gravel:'Gravel',mixed:'Mixed'})[k] || k;
   function useLabel(){
+    if(ext) return ext.label || 'Use';
     if(kind==='patio') return target && target.startsWith('pw:') ? 'Use for this area' : 'Add to pressure washing';
     if(kind==='roof') return 'Use for roof cleaning';
     return 'Use for gutters';
@@ -245,6 +247,7 @@ const MEASURE = (()=>{
     const mine = shapes.filter(s=>s.kind===kind && shownValue(s).n>0);
     if(!mine.length) return;
     const tot = mine.reduce((t,s)=>t+shownValue(s).n,0);
+    if(ext){ const e = ext; const snap = snapshot(); leaveExt(); try{ e.onUse && e.onUse(tot, snap); }catch(err){ console.error(err); } show(e.back || 'quote'); if(e.back==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.render(); return; }
     if(kind==='patio'){
       const surf = suggestions && ['block','concrete','tarmac','stone','imprint','porcelain','deck'].includes(suggestions.surface) ? suggestions.surface : null;
       const soil = suggestions && ['light','normal','heavy'].includes(suggestions.soiling) ? suggestions.soiling : null;
@@ -288,7 +291,28 @@ const MEASURE = (()=>{
     MEASURE._pending = null; setKind(kind);
   }
 
+  // leave a portfolio measurement and put the quote's own measurements back
+  function leaveExt(){ if(!ext) return; ext = null; clearAll(); if(savedQuote && savedQuote.length) restore(savedQuote); savedQuote = null; }
+  async function openFor(o){
+    if(ext) leaveExt();
+    savedQuote = gmap ? snapshot() : (MEASURE._pending || []);
+    ext = o; target = null;
+    show('measure');
+    el('mProp').value = o.property || 'commercial';
+    status('');
+    try{
+      await ensureMap();
+      clearAll(); MEASURE._pending = null;
+      if(o.shapes && o.shapes.length) restore(o.shapes);
+      setKind(o.kind || 'gutters');
+      if(o.lat && o.lng){ gmap.setCenter({lat:+o.lat, lng:+o.lng}); gmap.setZoom(20); el('mAddr').value = o.addr || ''; status('Drag the map so the building sits under the cross, then measure.', ''); }
+      else if(o.addr){ el('mAddr').value = o.addr; await find(); }
+      google.maps.event.trigger(gmap, 'resize');
+      list();
+    }catch(e){ status(e.message||String(e), 'b'); }
+  }
   async function open(tgt){
+    if(ext) leaveExt();
     target = tgt || null;
     show('measure');
     const wt = $('wnType') && $('wnType').value; if(wt && !el('mProp').dataset.touched) el('mProp').value = wt==='D' ? 'detached' : wt==='T' ? 'mid' : 'semi';
@@ -317,7 +341,7 @@ const MEASURE = (()=>{
     el('mClear').onclick = ()=>{ if(splitPts) endSplit(); shapes.filter(s=>s.kind===kind).forEach(s=>removeShape(s.id)); stopDraw(); };
     el('mSplit').onclick = ()=>{ if(!gmap) return; splitPts ? endSplit() : startSplit(); };
     el('mUse').onclick = useInQuote;
-    el('mBack').onclick = ()=>{ stopDraw(); show('quote'); };
+    el('mBack').onclick = ()=>{ stopDraw(); if(ext){ const b = ext.back || 'quote'; leaveExt(); show(b); if(b==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.render(); return; } show('quote'); };
     el('mList').addEventListener('input', e=>{ const id = +e.target.dataset.sid; const s = shapes.find(x=>x.id===id); if(!s) return;
       if(e.target.classList.contains('m-label')) s.label = e.target.value;
       if(e.target.classList.contains('m-pitch')){ s.pitch = e.target.value; list(); } });
@@ -325,7 +349,7 @@ const MEASURE = (()=>{
     document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('[data-measure]'); if(b){ e.preventDefault(); open(b.dataset.measure); } });
   }
   bind();
-  return {open, snapshot, restore, _pending:null};
+  return {open, openFor, loadGoogle, snapshot:()=> ext ? (savedQuote||[]) : snapshot(), restore, _pending:null};
 })();
 
 /* =====================================================================
