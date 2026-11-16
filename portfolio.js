@@ -124,6 +124,7 @@ const PORTFOLIO = (()=>{
   }
   async function openPortfolio(id){
     const p = list.find(x=>x.id===id); if(!p) return;
+    MV.view = null; MV.plan = null;
     root().innerHTML = `<div class="card"><p class="hint">Loading ${esc(p.name)}…</p></div>`;
     const {data, error} = await sb.from('portfolio_sites').select('*').eq('portfolio_id', id).order('ref');
     if(error){ flash('Could not load: ' + error.message); return; }
@@ -207,11 +208,11 @@ const PORTFOLIO = (()=>{
     const P = portfolioTotals();
     root().innerHTML = `
     <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.length} properties · <span id="pfSave">All changes saved</span></p></div>
-      <div class="vb-actions"><div class="seg" id="pfTabs">${[['summary','Summary'],['site','Properties'],['quote','Customer quote'],['customer','Customer access'],['settings','Settings & import']].map(([k,l])=>`<button type="button" data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div></div></div>
+      <div class="vb-actions"><div class="seg" id="pfTabs">${[['summary','Summary'],['site','Properties'],['map','Map & routes'],['quote','Customer quote'],['customer','Customer access'],['settings','Settings & import']].map(([k,l])=>`<button type="button" data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div></div></div>
     <div id="pfBody"></div>`;
     $('pfBack').onclick = e=>{ e.preventDefault(); try{ sessionStorage.removeItem('pfCur'); }catch(x){} loadList().then(renderList); };
     root().querySelectorAll('#pfTabs button').forEach(b=> b.onclick = ()=>{ tab = b.dataset.t; render(); window.scrollTo(0,0); });
-    ({summary:renderSummary, site:renderSite, quote:renderQuote, customer:renderCustomer, settings:renderSettings}[tab]||renderSummary)($('pfBody'), P);
+    ({summary:renderSummary, site:renderSite, map:renderMap, quote:renderQuote, customer:renderCustomer, settings:renderSettings}[tab]||renderSummary)($('pfBody'), P);
   }
   const statusOf = k => STATUSES.find(s=>s[0]===k) || STATUSES[0];
   const opt = (arr, val, ph) => `<option value="">${ph||'Select…'}</option>` + arr.map(o=>{ const [v,l] = Array.isArray(o)?o:[o,o]; return `<option value="${esc(v)}" ${String(val)===String(v)?'selected':''}>${esc(l)}</option>`; }).join('');
@@ -573,6 +574,209 @@ const PORTFOLIO = (()=>{
       });
     }catch(e){ msg(e.message || String(e)); }
   }
+  /* ---------- map of every property + visit routes ---------- */
+  const BASE_ADDR = '26 Anlaby Park Road South, Hull HU4 7BJ';
+  const ST = () => { cur.settings = cur.settings || {}; return cur.settings; };   // the saved settings themselves (S() is a copy)
+  const MV = {map:null, markers:{}, line:null, base:null, colour:'survey', show:'all', plan:null};
+  const plans = () => { const st = ST(); st.plans = Array.isArray(st.plans) ? st.plans : []; return st.plans; };
+  const planOf = id => plans().find(p=>p.id===id);
+  const routedIn = sid => plans().find(p=>p.stops.includes(sid));
+  const hav = (a,b) => { const R6 = 6371, t = x=>x*Math.PI/180, dLa = t(b.lat-a.lat), dLo = t(b.lng-a.lng);
+    const h = Math.sin(dLa/2)**2 + Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(dLo/2)**2; return 2*R6*Math.asin(Math.sqrt(h)); };
+  const ll = s => s && s.lat && s.lng ? {lat:+s.lat, lng:+s.lng} : null;
+  const startLL = () => { const st = ST(); return st.planStartLL && st.planStartLL.lat ? st.planStartLL : null; };
+  // best visiting order: nearest neighbour from the start, then 2-opt to untangle crossings
+  function bestOrder(ids, start, back){
+    const pts = ids.map(id=>({id, p:ll(sites[id])})).filter(x=>x.p);
+    if(pts.length < 2) return pts.map(x=>x.id);
+    const d = (a,b) => hav(a,b);
+    let order = [], left = pts.slice(), at = start || left[0].p;
+    if(!start){ order.push(left.shift()); at = order[0].p; }
+    while(left.length){ let bi = 0, bd = Infinity; left.forEach((x,i)=>{ const v = d(at, x.p); if(v<bd){ bd = v; bi = i; } }); const n = left.splice(bi,1)[0]; order.push(n); at = n.p; }
+    const path = o => { let t = 0, prev = start; o.forEach(x=>{ if(prev) t += d(prev, x.p); prev = x.p; }); if(back && start && o.length) t += d(o[o.length-1].p, start); return t; };
+    let best = path(order), improved = true, guard = 0;
+    while(improved && guard++ < 60){
+      improved = false;
+      for(let i=0;i<order.length-1;i++) for(let k=i+1;k<order.length;k++){
+        const c = order.slice(0,i).concat(order.slice(i,k+1).reverse(), order.slice(k+1)); const v = path(c);
+        if(v < best - 1e-9){ order = c; best = v; improved = true; }
+      }
+    }
+    return order.map(x=>x.id).concat(ids.filter(id=>!ll(sites[id])));
+  }
+  function routeStats(p){
+    const st = ST(), start = startLL(), pts = p.stops.map(id=>ll(sites[id])).filter(Boolean);
+    let km = 0, prev = start; pts.forEach(x=>{ if(prev) km += hav(prev, x); prev = x; }); if(st.planReturn!==false && start && pts.length) km += hav(pts[pts.length-1], start);
+    const miles = km * 1.3 * 0.621371;                     // straight line → roads, roughly
+    const drive = miles / 18;                              // ~18 mph average round Hull, with parking
+    const work = p.stops.reduce((a,id)=>a + (sites[id] ? calc(sites[id]).hrs : 0), 0);
+    return {miles, drive, work, total:drive+work};
+  }
+  function mapsLinks(p){
+    const st = ST(), start = startLL();
+    const pts = [...(start?[start]:[]), ...p.stops.map(id=>ll(sites[id])).filter(Boolean), ...(start && st.planReturn!==false ? [start] : [])];
+    const out = [];
+    for(let i=0; i<pts.length-1; i+=10){                     // Google Maps links take up to 9 stops between start and end
+      const seg = pts.slice(i, i+11); if(seg.length<2) break;
+      const f = x => `${x.lat.toFixed(6)},${x.lng.toFixed(6)}`;
+      out.push(`https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${f(seg[0])}&destination=${f(seg[seg.length-1])}${seg.length>2?'&waypoints='+encodeURIComponent(seg.slice(1,-1).map(f).join('|')):''}`);
+    }
+    return out;
+  }
+  const hm = h => { const m = Math.round(h*60); return m<60 ? `${m} min` : `${Math.floor(m/60)} h ${String(m%60).padStart(2,'0')}`; };
+
+  function renderMap(box){
+    const st = ST(), all = sorted(), P = plans();
+    P.forEach(x=>{ x.stops = (x.stops||[]).filter(id=>sites[id]); });
+    if(!MV.plan || !planOf(MV.plan)) MV.plan = P[0] ? P[0].id : null;
+    const p = planOf(MV.plan), noLL = all.filter(s=>!ll(s));
+    const routed = new Set(P.flatMap(x=>x.stops));
+    const legend = (MV.colour==='job' ? JOB_ST : STATUSES).map(x=>`<span><i style="background:${x[2]}"></i>${esc(x[1])}</span>`).join('');
+    const rs = p ? routeStats(p) : null, links = p ? mapsLinks(p) : [];
+    box.innerHTML = `<div class="pf-mapgrid">
+      <section class="card pf-bigmap"><div class="pf-maptools">
+          <div class="seg" id="mvColour"><button type="button" data-c="survey" class="${MV.colour==='survey'?'on':''}">Survey</button><button type="button" data-c="job" class="${MV.colour==='job'?'on':''}">Job</button></div>
+          <select id="mvShow"><option value="all" ${MV.show==='all'?'selected':''}>All properties</option><option value="free" ${MV.show==='free'?'selected':''}>Not in a route yet</option><option value="visit" ${MV.show==='visit'?'selected':''}>Site visit needed</option><option value="notdone" ${MV.show==='notdone'?'selected':''}>Job not completed</option></select>
+          <span class="hint" style="margin:0">${p ? 'Click a pin to add it to or remove it from <b>' + esc(p.name) + '</b>.' : 'Make a route, then click pins to add them.'}</span></div>
+        <div id="mvMap" class="pf-mvmap"><p class="hint" style="padding:16px">Loading map…</p></div>
+        <div class="pf-legend">${legend}<span><i class="base"></i>Start</span></div>
+        ${noLL.length ? `<p class="note w" style="margin:10px 0 0">${noLL.length} propert${noLL.length>1?'ies are':'y is'} not on the map yet (${noLL.slice(0,4).map(s=>esc(s.name||s.address)).join(', ')}${noLL.length>4?'…':''}). <button class="btn sm" type="button" id="mvFind">Find on map</button></p>` : ''}
+      </section>
+      <div class="pf-routes">
+        <section class="card"><h3 style="margin-top:0">Start &amp; finish</h3>
+          <div class="fields one"><label class="f">Start from<input id="mvStart" value="${esc(st.planStart || BASE_ADDR)}"></label></div>
+          <label class="ck" style="margin-top:8px"><input type="checkbox" id="mvReturn" ${st.planReturn!==false?'checked':''}>Return to the start at the end of the day</label>
+        </section>
+        <section class="card"><div class="pf-maphead"><h3 style="margin:0">Routes</h3><span class="hint" style="margin:0">${routed.size} of ${all.length} properties planned</span></div>
+          ${P.length ? `<div class="pf-rtabs">${P.map(x=>`<button type="button" data-plan="${x.id}" class="${x.id===MV.plan?'on':''}">${esc(x.name)}<small>${x.stops.length}${x.date?' · '+fmtD(x.date).replace(/ \d{4}$/,''):''}</small></button>`).join('')}</div>` : '<p class="hint">No routes yet.</p>'}
+          <div class="pf-tools" style="margin-top:10px"><button class="btn sm" type="button" id="mvNew">+ New route</button><button class="btn sm" type="button" id="mvAuto">Suggest routes…</button></div>
+          <div id="mvAutoBox" hidden class="pf-autobox"><p class="hint" style="margin-top:0">Splits every property not yet in a route into days, keeping each day's properties close together.</p>
+            <div class="fields"><label class="f">Properties per day<input type="number" id="mvPer" min="1" max="40" value="${esc(st.planPer || 10)}"></label><label class="f">First day<input type="date" id="mvFirst"></label></div>
+            <label class="ck" style="margin-top:6px"><input type="checkbox" id="mvWeekdays" checked>Weekdays only</label>
+            <div class="pf-tools" style="margin-top:8px"><span style="flex:1"></span><button class="btn pri sm" type="button" id="mvAutoGo">Make routes</button></div></div>
+        </section>
+        ${p ? `<section class="card pf-route">
+          <div class="fields"><label class="f">Route name<input id="mvName" value="${esc(p.name)}"></label><label class="f">Date<input type="date" id="mvDate" value="${esc(p.date||'')}"></label></div>
+          <div class="pf-rstats">
+            <div><b>${p.stops.length}</b><span>Stops</span></div><div><b>${rs.miles.toFixed(1)}</b><span>Miles approx.</span></div>
+            <div><b>${hm(rs.drive)}</b><span>Driving approx.</span></div><div><b>${rs.work ? hm(rs.work) : '–'}</b><span>On site</span></div>
+          </div>
+          ${rs.work ? `<p class="hint" style="margin:6px 0 0">About ${hm(rs.total)} in total – ${rs.total > R.dayHours ? `<b style="color:var(--warn)">over a ${R.dayHours} h day</b>` : `fits a ${R.dayHours} h day`}. On-site time comes from each property's survey.</p>` : `<p class="hint" style="margin:6px 0 0">On-site time appears once properties have gutter lengths.</p>`}
+          <ol class="pf-stops">${p.stops.map((id,i)=>{ const s = sites[id]; if(!s) return ''; return `<li><span class="pf-sn">${i+1}</span><div><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><small>${esc(s.postcode||'')}${s.data.keyholder?' · '+esc(s.data.keyholder):''}</small></div><span class="pf-sbtn"><button type="button" data-up="${i}" ${i?'':'disabled'} title="Move up">↑</button><button type="button" data-down="${i}" ${i<p.stops.length-1?'':'disabled'} title="Move down">↓</button><button type="button" data-open="${id}" title="Open property">↗</button><button type="button" data-out="${i}" title="Take out of route">×</button></span></li>`; }).join('') || '<p class="hint">Click pins on the map to add properties.</p>'}</ol>
+          <div class="pf-tools" style="margin-top:10px">
+            <button class="btn sm" type="button" id="mvBest" ${p.stops.length>1?'':'disabled'}>Best order</button>
+            <button class="btn sm" type="button" id="mvRev" ${p.stops.length>1?'':'disabled'}>Reverse</button>
+            <button class="btn sm" type="button" id="mvCopy" ${p.stops.length?'':'disabled'}>Copy list</button>
+            <span style="flex:1"></span><button class="btn sm del" type="button" id="mvDel">Delete route</button></div>
+          ${links.length ? `<div class="pf-tools" style="margin-top:8px">${links.map((u,i)=>`<a class="btn pri sm" href="${esc(u)}" target="_blank" rel="noopener">Open in Google Maps${links.length>1?` (part ${i+1} of ${links.length})`:''}</a>`).join('')}</div>${links.length>1?'<p class="hint" style="margin:6px 0 0">Google Maps takes up to 9 stops per link, so longer routes are split into parts.</p>':''}` : ''}
+        </section>` : ''}
+      </div></div>`;
+    bindMap(box, p);
+    drawMap(p);
+  }
+  function bindMap(box, p){
+    const st = ST(), save = () => { savePortfolio(300); };
+    box.querySelectorAll('#mvColour button').forEach(b=> b.onclick = ()=>{ MV.colour = b.dataset.c; render(); });
+    $('mvShow').onchange = e=>{ MV.show = e.target.value; render(); };
+    $('mvStart').onchange = async e=>{ st.planStart = e.target.value.trim(); st.planStartLL = null; save(); await ensureStart(); render(); };
+    $('mvReturn').onchange = e=>{ st.planReturn = e.target.checked; save(); render(); };
+    box.querySelectorAll('[data-plan]').forEach(b=> b.onclick = ()=>{ MV.plan = b.dataset.plan; render(); });
+    $('mvNew').onclick = ()=>{ const P = plans(); const n = {id:'r'+Date.now().toString(36), name:`Day ${P.length+1}`, date:'', stops:[]}; P.push(n); MV.plan = n.id; save(); render(); };
+    $('mvAuto').onclick = ()=>{ const b = $('mvAutoBox'); b.hidden = !b.hidden; };
+    $('mvAutoGo').onclick = ()=>{
+      const per = Math.max(1, Math.min(40, Math.round(num($('mvPer').value)) || 10)); st.planPer = per;
+      const routed = new Set(plans().flatMap(x=>x.stops));
+      const free = sorted().filter(s=>!routed.has(s.id) && ll(s) && s.data.include!==false && s.data.status!=='noquote' && s.data.job.status!=='done' && s.data.job.status!=='na').map(s=>s.id);
+      if(!free.length){ flash('Every property is already in a route'); return; }
+      const order = bestOrder(free, startLL(), false);
+      let day = $('mvFirst').value ? new Date($('mvFirst').value + 'T12:00:00') : null; const wk = $('mvWeekdays').checked;
+      const nextDay = d => { const n = new Date(d.getTime() + 864e5); if(wk) while(n.getDay()===0 || n.getDay()===6) n.setTime(n.getTime() + 864e5); return n; };
+      if(day && wk) while(day.getDay()===0 || day.getDay()===6) day.setTime(day.getTime() + 864e5);
+      const P = plans(); let made = 0, firstId = null;
+      for(let i=0;i<order.length;i+=per){
+        const stops = bestOrder(order.slice(i, i+per), startLL(), st.planReturn!==false);
+        const n = {id:'r'+Date.now().toString(36)+i, name:`Day ${P.length+1}`, date: day ? day.toISOString().slice(0,10) : '', stops};
+        P.push(n); made++; if(!firstId) firstId = n.id; if(day) day = nextDay(day);
+      }
+      MV.plan = firstId; save(); render(); flash(`${made} route${made>1?'s':''} made for ${order.length} properties`);
+    };
+    const f = $('mvFind'); if(f) f.onclick = async ()=>{
+      f.disabled = true; f.textContent = 'Finding…'; let n = 0;
+      try{ await MEASURE.loadGoogle(); const g = new google.maps.Geocoder();
+        for(const s of sorted().filter(x=>!ll(x))){ const q = [s.address, s.postcode].filter(Boolean).join(', '); if(!q) continue;
+          try{ const {results} = await g.geocode({address:q, region:'gb'}); if(results && results[0]){ const l = results[0].geometry.location; s.lat = l.lat(); s.lng = l.lng(); saveSite(s, 0); n++; } }catch(e){} }
+      }catch(e){ flash(e.message||String(e)); }
+      flash(n ? `${n} found` : 'None could be found – check the addresses'); render();
+    };
+    if(!p) return;
+    $('mvName').oninput = e=>{ p.name = e.target.value || 'Route'; save(); };
+    $('mvName').onchange = ()=> render();
+    $('mvDate').onchange = e=>{ p.date = e.target.value; save(); render(); };
+    box.querySelectorAll('[data-up]').forEach(b=> b.onclick = ()=>{ const i = +b.dataset.up; [p.stops[i-1], p.stops[i]] = [p.stops[i], p.stops[i-1]]; save(); render(); });
+    box.querySelectorAll('[data-down]').forEach(b=> b.onclick = ()=>{ const i = +b.dataset.down; [p.stops[i+1], p.stops[i]] = [p.stops[i], p.stops[i+1]]; save(); render(); });
+    box.querySelectorAll('[data-out]').forEach(b=> b.onclick = ()=>{ p.stops.splice(+b.dataset.out, 1); save(); render(); });
+    box.querySelectorAll('[data-open]').forEach(b=> b.onclick = ()=>{ siteId = b.dataset.open; tab = 'site'; render(); window.scrollTo(0,0); });
+    $('mvBest').onclick = ()=>{ p.stops = bestOrder(p.stops, startLL(), st.planReturn!==false); save(); render(); flash('Stops put in the shortest order'); };
+    $('mvRev').onclick = ()=>{ p.stops.reverse(); save(); render(); };
+    $('mvCopy').onclick = async ()=>{
+      const t = `${p.name}${p.date?' – '+fmtD(p.date):''}\nStart: ${st.planStart||BASE_ADDR}\n` + p.stops.map((id,i)=>{ const s = sites[id]; return `${i+1}. ${s.name||s.address} – ${s.address}${s.postcode?', '+s.postcode:''}${s.data.keyholder?' (key: '+s.data.keyholder+')':''}`; }).join('\n');
+      try{ await navigator.clipboard.writeText(t); flash('Copied'); }catch(e){ flash('Copy was blocked by the browser'); }
+    };
+    $('mvDel').onclick = ()=>{
+      if(!confirmInline('mvDel'+p.id, `Press Delete route again to delete ${p.name}. The properties stay in the portfolio.`)) return;
+      const P = plans(); P.splice(P.indexOf(p), 1); MV.plan = P[0] ? P[0].id : null; save(); render();
+    };
+  }
+  async function ensureStart(){
+    const st = ST(); if(startLL()) return startLL();
+    try{ await MEASURE.loadGoogle(); const {results} = await new google.maps.Geocoder().geocode({address:st.planStart || BASE_ADDR, region:'gb'});
+      if(results && results[0]){ st.planStartLL = results[0].geometry.location.toJSON(); savePortfolio(300); }
+      else flash('Start address not found on the map');
+    }catch(e){}
+    return startLL();
+  }
+  async function drawMap(p){
+    try{
+      if(typeof MEASURE==='undefined' || !MEASURE.loadGoogle) throw new Error('Google Maps is not available');
+      await MEASURE.loadGoogle(); await ensureStart();
+      const el = $('mvMap'); if(!el) return;
+      const keep = MV.map && MV.mapEl === el ? null : (MV.view || null);
+      MV.map = new google.maps.Map(el, {center:{lat:53.745, lng:-0.40}, zoom:11, mapTypeId:'roadmap', mapTypeControl:true, mapTypeControlOptions:{mapTypeIds:['roadmap','hybrid']}, streetViewControl:false, fullscreenControl:true, clickableIcons:false, gestureHandling:'greedy'});
+      MV.mapEl = el;
+      const routedBy = {}; plans().forEach(x=>x.stops.forEach((id,i)=>routedBy[id] = {plan:x, i}));
+      const bounds = new google.maps.LatLngBounds(); let any = false;
+      sorted().forEach(s=>{
+        const pos = ll(s); if(!pos) return;
+        const r = routedBy[s.id], inThis = p && r && r.plan.id===p.id;
+        const show = MV.show==='all' || inThis || (MV.show==='free' && !r) || (MV.show==='visit' && s.data.status==='visit') || (MV.show==='notdone' && s.data.job.status!=='done');
+        if(!show) return;
+        const col = MV.colour==='job' ? jobOf(s.data.job.status)[2] : statusOf(s.data.status)[2];
+        const dim = p && r && !inThis;
+        const m = new google.maps.Marker({position:pos, map:MV.map, zIndex: inThis ? 1000 : 10,
+          label:{text: inThis ? String(r.i+1) : String(s.ref), color: inThis ? '#fff' : '#132f47', fontSize:'11px', fontWeight:'700'},
+          icon:{path:google.maps.SymbolPath.CIRCLE, scale: inThis ? 13 : 11, fillColor: inThis ? '#132f47' : col, fillOpacity: dim ? .45 : 1, strokeColor: inThis ? col : '#fff', strokeWeight: inThis ? 4 : 2},
+          title:`${s.ref}. ${s.name||s.address}\n${statusOf(s.data.status)[1]} · Job: ${jobOf(s.data.job.status)[1]}${r?`\nIn ${r.plan.name} (stop ${r.i+1})`:''}${p?`\nClick to ${inThis?'take out of':'add to'} ${p.name}`:''}`});
+        m.addListener('click', ()=>{
+          if(!p){ flash('Make a route first, then click pins to add them'); return; }
+          if(inThis) p.stops.splice(p.stops.indexOf(s.id), 1);
+          else { if(r){ r.plan.stops.splice(r.plan.stops.indexOf(s.id), 1); flash(`Moved from ${r.plan.name}`); } p.stops.push(s.id); }
+          MV.view = {c:MV.map.getCenter().toJSON(), z:MV.map.getZoom()}; savePortfolio(300); render();
+        });
+        bounds.extend(pos); any = true;
+      });
+      const start = startLL();
+      if(start){ new google.maps.Marker({position:start, map:MV.map, zIndex:2000, title:'Start: ' + (ST().planStart||BASE_ADDR),
+        icon:{path:'M 0,-14 L 4,-4 14,-4 6,3 9,13 0,7 -9,13 -6,3 -14,-4 -4,-4 z', fillColor:'#C98A12', fillOpacity:1, strokeColor:'#fff', strokeWeight:2, scale:1}}); bounds.extend(start); }
+      if(p && p.stops.length){
+        const path = [...(start?[start]:[]), ...p.stops.map(id=>ll(sites[id])).filter(Boolean), ...(start && ST().planReturn!==false ? [start] : [])];
+        new google.maps.Polyline({path, map:MV.map, strokeColor:'#132f47', strokeOpacity:.85, strokeWeight:3, icons:[{icon:{path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale:2.5, strokeColor:'#132f47'}, offset:'50%', repeat:'90px'}]});
+      }
+      if(MV.view){ MV.map.setCenter(MV.view.c); MV.map.setZoom(MV.view.z); }
+      else if(any) MV.map.fitBounds(bounds, 40);
+      MV.map.addListener('idle', ()=>{ MV.view = {c:MV.map.getCenter().toJSON(), z:MV.map.getZoom()}; });
+    }catch(e){ const el = $('mvMap'); if(el) el.innerHTML = `<p class="note b" style="margin:16px">${esc(e.message||String(e))}</p>`; }
+  }
+
   /* ---------- customer quote ---------- */
   function quoteHTML(opts={}){
     const P = portfolioTotals(), st = S(), today = new Date(), valid = new Date(today.getTime() + num(st.validDays||30)*864e5);
