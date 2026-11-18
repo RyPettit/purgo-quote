@@ -2,7 +2,7 @@
 // Network first, cache as fallback, so a new release is picked up straight away
 // and the last good copy is used when there is no signal.
 const VERSION = 'purgo-__VERSION__';
-const SHELL = ['./', 'index.html', 'purgo.css?v=__CSS__', 'purgo.js?v=__JS__', 'measure.js?v=__MS__', 'portfolio.js?v=__PF__', 'portal.js?v=__PT__', 'accounts.js?v=__AC__', 'config.js', 'vendor/supabase-2.117.3.js',
+const SHELL = ['./', 'index.html', 'purgo.css?v=__CSS__', 'purgo.js?v=__JS__', 'measure.js?v=__MS__', 'portfolio.js?v=__PF__', 'portal.js?v=__PT__', 'accounts.js?v=__AC__', 'mail.js?v=__ML__', 'config.js', 'vendor/supabase-2.117.3.js',
   'postcodes.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png',
   'icons/apple-touch-icon.png', 'fonts/plus-jakarta-sans.woff2', 'brand/emblem-light.png', 'brand/wordmark-light.png',
   'brand/logo-navy.png', 'brand/logo-light.png'];
@@ -20,6 +20,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // database calls go straight to the network
+  if (req.mode === 'navigate' && !/\/(index\.html)?$/.test(url.pathname)) return; // other pages (e.g. a customer's quote link) aren't the app
   const key = req.mode === 'navigate' ? 'index.html' : req;
   e.respondWith(
     fetch(req).then(r => {
