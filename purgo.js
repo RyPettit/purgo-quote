@@ -68,6 +68,14 @@ function markRatesDirty(){
 }
 
 let ctype = 'res';
+// RAMS starts unticked on window-only commercial quotes and ticked for other commercial work, until someone ticks/unticks it
+let ramsTouched = false;
+function autoRams(){
+  if(ramsTouched) return;
+  const on = id => $(id) && $(id).checked;
+  const windowsOnly = on('on-wn') && !on('on-pw') && !on('on-gt') && !on('on-rf');
+  $('coRams').checked = !windowsOnly;
+}
 let rfChems = null; // roof chemical treatments (null = not chosen yet, defaults to the usual roof biocide)
 // Roof sections: each priced on its own line (name, roof area, pitch, covering, method)
 const RF_PITCH = {flat:'Flat', low:'Low', std:'Standard', steep:'Steep'};
@@ -264,6 +272,7 @@ function lockedRates(){
   return L;
 }
 function calc(){
+  autoRams();
   if(!isLocked()) return calcNow();
   const keep = R; R = lockedRates();
   try{ return calcNow(); } finally { R = keep; }
@@ -705,6 +714,7 @@ function restore(s){
   renderPw(); renderRf(); renderRfChem();
   $('email').value = ''; $('wnPrice').value = 'builder'; $('wnOwn').value = 0;   // quotes saved before own-price existed used the builder
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
+  ramsTouched = true;   // a saved quote keeps the RAMS choice it was saved with
   syncSvc(); resolvePc(); render();
 }
 $('qNotes').addEventListener('input', e=>{ e.stopPropagation(); customNotes = $('qNotes').value.split('\n').map(x=>x.replace(/^\s*[•\-*]\s*/, '').trim()).filter(Boolean); render(); });
@@ -866,7 +876,7 @@ $('copyQ').onclick = async ()=>{
 };
 $('newJob').onclick = ()=>{
   ['cust','addr','pc','phone','email','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
-  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); $('wnPrice').value='builder';
+  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); $('wnPrice').value='builder'; ramsTouched = false;
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
@@ -1426,3 +1436,5 @@ async function boot(){
   else if(!/type=recovery/.test(location.hash)) show('login');
 }
 boot();
+
+['input','click','change'].forEach(ev=> $('coRams').addEventListener(ev, ()=>{ ramsTouched = true; }, true));
