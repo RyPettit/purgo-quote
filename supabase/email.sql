@@ -78,7 +78,7 @@ revoke all on public.mail_connection from anon, authenticated;
 
 -- ============ Check the mailbox every 2 minutes (needs pg_cron + pg_net) ============
 create extension if not exists pg_cron;
-create extension if not exists pg_net;
+create extension if not exists pg_net with schema extensions;
 -- this project's address, kept in the vault (live: https://iixqkqkmdholetujuqin.supabase.co, dev: https://mzqgazqbkmenssrdbuiq.supabase.co)
 -- select vault.create_secret('https://<project>.supabase.co', 'purgo_project_url', 'Supabase project URL for scheduled jobs');
 create or replace function public.run_mail_sync() returns bigint
