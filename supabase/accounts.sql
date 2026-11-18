@@ -1,5 +1,5 @@
 -- Purgō Portal: Accounts (CRM phase 1)
--- One account per customer (household, business or managing agent). Quotes, properties,
+-- One account per customer (residential or commercial). Quotes, properties,
 -- contacts and communications all hang off the account; invoices will too.
 -- Safe to re-run.
 
