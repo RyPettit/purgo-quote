@@ -473,7 +473,18 @@ const PORTFOLIO = (()=>{
     const ms = $('pfMeasure'); if(ms) ms.onclick = ()=>{
       if(typeof MEASURE==='undefined' || !MEASURE.openFor){ flash('Measuring is not available'); return; }
       MEASURE.openFor({kind:'gutters', addr:[s.address, s.postcode].filter(Boolean).join(', '), lat:s.lat, lng:s.lng, property:'commercial', label:'Use for this property', back:'portfolio',
-        onUse:(total)=>{ s.data.len = {front:String(Math.round(total)), rear:'', left:'', right:'', other:''}; s.data.measuredAt = new Date().toISOString(); saveSite(s, 0); flash(`${Math.round(total)} m of gutter added to ${s.name||s.address}`); }});
+        shapes: Array.isArray(s.data.measureShapes) ? s.data.measureShapes : [],
+        onUse:(total, runs)=>{
+          // each gutter run goes on the elevation its name says (Front / Rear / Left / Right); anything else → Other
+          const by = {front:0, rear:0, left:0, right:0, other:0};
+          (runs||[]).forEach(r=>{ by[MEASURE.elevOf ? MEASURE.elevOf(r.label) : 'other'] += num(r.value); });
+          if(!(runs||[]).length) by.front = total;
+          const f = v => v ? String(Math.round(v*10)/10) : '';
+          s.data.len = {front:f(by.front), rear:f(by.rear), left:f(by.left), right:f(by.right), other:f(by.other)};
+          s.data.measureShapes = runs || []; s.data.measuredAt = new Date().toISOString(); saveSite(s, 0);
+          const parts = Object.entries(by).filter(([k,v])=>v).map(([k,v])=>`${k} ${Math.round(v)} m`);
+          flash(`Gutters saved – ${parts.join(', ')}`);
+        }});
     };
   }
   function toggleRev(s, img){

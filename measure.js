@@ -13,6 +13,11 @@ const MEASURE = (()=>{
   ];
   const COLORS = {ai:'#6da7c4', manual:'#f2c14e'};
   const KIND_LABEL = {patio:'Drive / patio', roof:'Roof', gutters:'Gutters'};
+  // which side of the building a gutter run is on, from its name ("Front eaves", "Rear", "Left side"…)
+  const ELEV_NAME = {front:'Front', rear:'Rear', left:'Left', right:'Right', other:'Other'};
+  const elevOf = label => { const l = String(label||'').toLowerCase();
+    if(/\bfront\b/.test(l)) return 'front'; if(/\b(rear|back)\b/.test(l)) return 'rear';
+    if(/\bleft\b/.test(l)) return 'left'; if(/\bright\b/.test(l)) return 'right'; return 'other'; };
   let gmap = null, geocoder = null, loading = null;
   let kind = 'patio', target = null, drawing = null, delMode = false, splitPts = null, splitLine = null;
   let shapes = [];        // {id, label, type:'area'|'line', kind, source, pitch, obj}
@@ -181,13 +186,18 @@ const MEASURE = (()=>{
       const v = shownValue(s);
       return `<div class="m-row" data-sid="${s.id}">
         <span class="m-sw" style="background:${COLORS[s.source]}"></span>
-        <input class="m-label" data-sid="${s.id}" value="${esc(s.label)}" aria-label="Name">
+        <input class="m-label" data-sid="${s.id}" value="${esc(s.label)}" aria-label="Name"${s.kind==='gutters' ? ` list="mGutNames" title="Name each run Front, Rear, Left side or Right side so it goes on the right elevation"` : ''}>
         <div class="m-val"><b>${v.txt}</b>${v.sub?`<small>${v.sub}</small>`:''}</div>
         ${s.kind==='roof' ? `<select class="m-pitch" data-sid="${s.id}" aria-label="Roof pitch">${PITCH.map(p=>`<option value="${p.v}" ${p.v===s.pitch?'selected':''}>${p.label}</option>`).join('')}</select>` : '<span></span>'}
         <button class="btn sm" type="button" data-mdel="${s.id}">Delete</button>
       </div>`;
     }).join('') : `<p class="hint">Nothing measured yet. ${kind==='patio' ? 'Put the cross on the drive or patio you want measured' : 'Put the cross on the customer\'s house'}, then press <b>AI outline</b> or <b>Draw by hand</b>.</p>`;
     const tot = mine.reduce((t,s)=>t+shownValue(s).n,0);
+    if(mine.length && kind==='gutters'){
+      const by = {}; mine.forEach(s=>{ const e = elevOf(s.label); by[e] = (by[e]||0) + shownValue(s).n; });
+      html += `<div class="m-elev">${Object.keys(ELEV_NAME).filter(k=>by[k]).map(k=>`<span>${ELEV_NAME[k]} <b>${by[k].toFixed(1)} m</b></span>`).join('')}</div>`
+        + `<datalist id="mGutNames"><option value="Front"><option value="Rear"><option value="Left side"><option value="Right side"><option value="Extension"><option value="Garage"></datalist>`;
+    }
     if(mine.length) html += `<div class="m-total">Total <b>${kind==='gutters' ? tot.toFixed(1)+' m' : tot.toFixed(1)+' m²'}</b></div>`;
     box.innerHTML = html;
     el('mUse').disabled = !mine.some(s=>shownValue(s).n>0);
@@ -247,7 +257,7 @@ const MEASURE = (()=>{
     const mine = shapes.filter(s=>s.kind===kind && shownValue(s).n>0);
     if(!mine.length) return;
     const tot = mine.reduce((t,s)=>t+shownValue(s).n,0);
-    if(ext){ const e = ext; const snap = snapshot(); leaveExt(); try{ e.onUse && e.onUse(tot, snap); }catch(err){ console.error(err); } show(e.back || 'quote'); if(e.back==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.render(); return; }
+    if(ext){ const e = ext; const snap = snapshot(); leaveExt(); try{ e.onUse && e.onUse(tot, snap.filter(x=>x.kind===kind)); }catch(err){ console.error(err); } show(e.back || 'quote'); if(e.back==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.render(); return; }
     if(kind==='patio'){
       const surf = suggestions && ['block','concrete','tarmac','stone','imprint','porcelain','deck'].includes(suggestions.surface) ? suggestions.surface : null;
       const soil = suggestions && ['light','normal','heavy'].includes(suggestions.soiling) ? suggestions.soiling : null;
@@ -345,11 +355,12 @@ const MEASURE = (()=>{
     el('mList').addEventListener('input', e=>{ const id = +e.target.dataset.sid; const s = shapes.find(x=>x.id===id); if(!s) return;
       if(e.target.classList.contains('m-label')) s.label = e.target.value;
       if(e.target.classList.contains('m-pitch')){ s.pitch = e.target.value; list(); } });
+    el('mList').addEventListener('change', e=>{ if(e.target.classList.contains('m-label') && kind==='gutters') list(); });   // refresh the Front/Rear/… split
     el('mList').addEventListener('click', e=>{ const d = e.target.dataset && e.target.dataset.mdel; if(d) removeShape(+d); });
     document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('[data-measure]'); if(b){ e.preventDefault(); open(b.dataset.measure); } });
   }
   bind();
-  return {open, openFor, loadGoogle, snapshot:()=> ext ? (savedQuote||[]) : snapshot(), restore, _pending:null};
+  return {open, openFor, loadGoogle, elevOf, snapshot:()=> ext ? (savedQuote||[]) : snapshot(), restore, _pending:null};
 })();
 
 /* =====================================================================
