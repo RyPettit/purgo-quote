@@ -20,6 +20,11 @@ change prices.
 | `index.html`, `purgo.css`, `purgo.js` | The app |
 | `accounts.js` | Accounts (CRM): customer details, contacts, properties, quotes, invoices (next) and communication log |
 | `supabase/accounts.sql` | Accounts tables, auto-linking of quotes to accounts, merge function. Safe to re-run. |
+| `mail.js` | Emailing quotes and messages, the notification bell, Admin → Email (Gmail connection) |
+| `q.html` | The customer's online quote: view, accept, decline or ask a question (no login; link sent in the quote email) |
+| `supabase/email.sql` | Online quote links, notifications, mailbox connection and the 2-minute mail check. Safe to re-run. |
+| `supabase/functions/mail` | Gmail: connect, send, and file customer emails on their accounts |
+| `supabase/functions/quote-public` | Serves the customer's online quote and records accept / decline / questions |
 | `config.js` | Live and dev Supabase details; the web address decides which is used |
 | `supabase/schema.sql` | Tables, access rules and starting prices. Safe to re-run. |
 | `supabase/make-admin.sql` | Makes your account the admin |

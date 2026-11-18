@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Your Purgō quote</title>
+<meta name="theme-color" content="#132f47">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Plus Jakarta Sans";src:url("fonts/plus-jakarta-sans.woff2") format("woff2");font-weight:200 800;font-display:swap}
+:root{--navy:#132f47;--ocean:#326986;--sky:#6da7c4;--mist:#c6e1ef;--soft:#e2eff7;--bg:#eef5f9;--line:#d4e4ee;--muted:#53708a;--good:#1f7a4d;--good-bg:#e3f3ea;--bad:#b3362c;--bad-bg:#fbeceb;--warn:#a86411;--warn-bg:#fdf3e4}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--navy);font:15px/1.5 "Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+header{background:linear-gradient(90deg,#132f47,#326986);padding:14px 18px}
+header .in{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:10px;color:#fff}
+header img.em{height:34px}header img.wm{height:22px}
+header .tel{margin-left:auto;color:#fff;text-decoration:none;font-weight:600;font-size:.9rem;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:6px 14px}
+main{max-width:760px;margin:0 auto;padding:18px 16px 60px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+h1{font-size:1.5rem;letter-spacing:-.02em;margin:0 0 2px}
+.sub{color:var(--muted);margin:0}
+.banner{border-radius:10px;padding:12px 14px;margin-bottom:16px;font-weight:600}
+.banner.good{background:var(--good-bg);color:var(--good)}.banner.bad{background:var(--bad-bg);color:var(--bad)}.banner.warn{background:var(--warn-bg);color:var(--warn)}
+.quote{overflow-x:auto}
+.quote>div{max-width:none!important}
+.quote [data-accept]{display:none}
+.btn{font:inherit;font-weight:700;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:999px;padding:11px 20px;cursor:pointer}
+.btn.pri{background:var(--navy);border-color:var(--navy);color:#fff}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.big{font-size:1.05rem;padding:14px 26px;width:100%}
+label{display:block;font-size:.85rem;font-weight:600;color:var(--muted);margin:12px 0 4px}
+input,textarea{width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f7fbfd;color:var(--navy)}
+input:focus,textarea:focus{outline:2px solid var(--sky);outline-offset:1px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.links{display:flex;gap:18px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.link{background:none;border:0;font:inherit;color:var(--ocean);text-decoration:underline;cursor:pointer;padding:4px}
+.err{color:var(--bad);font-weight:600;margin:10px 0 0}
+.total{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:6px 0 4px}
+.total b{font-size:1.6rem}
+.fine{color:var(--muted);font-size:.85rem;margin:10px 0 0}
+footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:24px}
+@media print{header .tel,.actions,.noprint{display:none!important}body{background:#fff}.card{border:0;padding:0}}
+</style>
+</head>
+<body>
+<header><div class="in"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"><a class="tel" href="tel:07930877034">07930 877034</a></div></header>
+<main>
+  <div id="loading" class="card"><p class="sub">Loading your quote…</p></div>
+  <div id="oops" class="card" hidden><h1>Sorry</h1><p id="oopsMsg"></p><p class="sub">You can call us on <a href="tel:07930877034">07930 877034</a>.</p></div>
+
+  <div id="page" hidden>
+    <div id="banner" class="banner" hidden></div>
+    <section class="card">
+      <h1 id="title">Your quote</h1>
+      <p class="sub" id="meta"></p>
+    </section>
+
+    <section class="card actions" id="acceptCard">
+      <div class="total"><span>Quote total</span><b id="total"></b></div>
+      <p class="sub" id="validTxt"></p>
+      <form id="acceptForm">
+        <label for="name">Your name</label>
+        <input id="name" autocomplete="name" required>
+        <label for="note">Anything we should know? <span style="font-weight:400">(optional)</span></label>
+        <textarea id="note" rows="3" placeholder="Preferred days, access, gate codes, pets…"></textarea>
+        <div class="row"><button class="btn pri big" type="submit" id="acceptBtn">Accept this quote</button></div>
+        <p class="fine">By accepting, you're asking Purgō to carry out the work in this quote. We'll contact you to arrange a date. You can still change your mind before the work is booked.</p>
+        <p class="err" id="acceptErr" hidden></p>
+      </form>
+      <div class="links noprint"><button class="link" type="button" id="askOpen">Ask a question</button><button class="link" type="button" id="decOpen">No thanks</button><button class="link" type="button" onclick="print()">Print or save as PDF</button></div>
+      <form id="askForm" hidden>
+        <label for="askNote">Your question</label>
+        <textarea id="askNote" rows="3" required></textarea>
+        <div class="row"><button class="btn pri" type="submit">Send question</button><button class="btn" type="button" data-close>Cancel</button></div>
+        <p class="err" id="askErr" hidden></p>
+      </form>
+      <form id="decForm" hidden>
+        <label for="decNote">Would you tell us why? <span style="font-weight:400">(optional, it helps us improve)</span></label>
+        <textarea id="decNote" rows="3"></textarea>
+        <div class="row"><button class="btn" type="submit">Decline the quote</button><button class="btn" type="button" data-close>Cancel</button></div>
+        <p class="err" id="decErr" hidden></p>
+      </form>
+    </section>
+
+    <section class="card quote" id="quote"></section>
+  </div>
+  <footer>Purgō, family run exterior cleaning · <a href="https://www.purgo-clean.com">www.purgo-clean.com</a></footer>
+</main>
+<script src="config.js"></script>
+<script>
+(()=>{
+  const $ = id => document.getElementById(id);
+  const CFG = window.PURGO_CONFIG || {};
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const gbp = n => '£' + (Math.round((+n||0)*100)/100).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const day = s => new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  let Q = null;
+
+  async function call(action, extra){
+    const r = await fetch(CFG.url + '/functions/v1/quote-public', {method:'POST', headers:{'Content-Type':'application/json', apikey:CFG.key},
+      body: JSON.stringify(Object.assign({action, token}, extra||{}))});
+    const j = await r.json().catch(()=>({error:'Something went wrong. Please try again.'}));
+    if(!r.ok || j.error) throw new Error(j.error || 'Something went wrong. Please try again.');
+    return j;
+  }
+  function render(msg){
+    $('loading').hidden = true; $('page').hidden = false;
+    document.title = `${Q.ref} – Purgō quote`;
+    $('title').textContent = `Your quote ${Q.ref}`;
+    $('meta').textContent = [Q.customer, Q.address].filter(Boolean).join(' · ');
+    $('total').textContent = gbp(Q.total);
+    $('quote').innerHTML = Q.html;      // the quote exactly as it was sent (built and escaped by the Portal)
+    const b = $('banner'); b.hidden = true; b.className = 'banner';
+    const open = Q.status!=='accepted' && Q.status!=='declined' && !Q.expired;
+    $('acceptCard').hidden = !open && Q.status!=='declined' && !Q.expired;
+    $('acceptForm').hidden = !open;
+    if(Q.status==='accepted'){ b.hidden = false; b.classList.add('good'); b.textContent = `Accepted${Q.acceptedName?' by '+Q.acceptedName:''} on ${day(Q.acceptedAt||Date.now())}. Thank you — we'll be in touch to arrange a date.`; }
+    else if(Q.status==='declined'){ b.hidden = false; b.classList.add('bad'); b.textContent = 'You declined this quote. If you change your mind, ask us a question below or call 07930 877034.'; }
+    else if(Q.expired){ b.hidden = false; b.classList.add('warn'); b.textContent = `This quote expired on ${day(Q.validUntil)}. Ask us a question below and we'll send you an up-to-date price.`; }
+    $('validTxt').textContent = open ? `Valid until ${day(Q.validUntil)}.` : '';
+    $('decOpen').hidden = !open;
+    if(msg){ b.hidden = false; b.className = 'banner good'; b.textContent = msg; window.scrollTo({top:0, behavior:'smooth'}); }
+    if(!$('name').value && Q.customer) $('name').value = Q.customer;
+  }
+  const busy = (form, on) => form.querySelectorAll('button').forEach(x=>x.disabled = on);
+  const fail = (id, e) => { $(id).hidden = false; $(id).textContent = e.message || String(e); };
+  const show = which => { ['askForm','decForm'].forEach(f=> $(f).hidden = f!==which); if(which) $(which).querySelector('textarea').focus(); };
+  document.querySelectorAll('[data-close]').forEach(b=> b.onclick = ()=> show(null));
+  $('askOpen').onclick = ()=> show('askForm');
+  $('decOpen').onclick = ()=> show('decForm');
+
+  $('acceptForm').onsubmit = async e=>{ e.preventDefault(); $('acceptErr').hidden = true; busy(e.target, true);
+    try{ Q = await call('accept', {name:$('name').value, note:$('note').value}); render(); }catch(x){ fail('acceptErr', x); }
+    busy(e.target, false); };
+  $('askForm').onsubmit = async e=>{ e.preventDefault(); $('askErr').hidden = true; busy(e.target, true);
+    try{ Q = await call('question', {name:$('name').value, note:$('askNote').value}); $('askNote').value = ''; show(null); render('Thanks — your question has been sent. We\'ll get back to you shortly.'); }catch(x){ fail('askErr', x); }
+    busy(e.target, false); };
+  $('decForm').onsubmit = async e=>{ e.preventDefault(); $('decErr').hidden = true; busy(e.target, true);
+    try{ Q = await call('decline', {note:$('decNote').value}); show(null); render(); }catch(x){ fail('decErr', x); }
+    busy(e.target, false); };
+
+  (async()=>{
+    if(!token){ $('loading').hidden = true; $('oops').hidden = false; $('oopsMsg').textContent = 'This link is missing its quote code. Please open it again from your email.'; return; }
+    try{ Q = await call('view'); render(); if(new URLSearchParams(location.search).get('do')==='accept' && !$('acceptForm').hidden) $('name').focus(); }
+    catch(e){ $('loading').hidden = true; $('oops').hidden = false; $('oopsMsg').textContent = e.message; }
+  })();
+})();
+</script>
+</body>
+</html>

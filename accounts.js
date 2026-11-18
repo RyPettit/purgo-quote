@@ -10,6 +10,7 @@ const ACCOUNTS = (()=>{
   const KINDS = {res:'Residential', com:'Commercial'};
   const STATUSES = {lead:'Lead', active:'Customer', inactive:'Inactive'};
   const COMMS = {note:'Note', call:'Phone call', sms:'Text message', email:'Email', visit:'Site visit'};
+  const COMMS_ALL = Object.assign({quote:'Online quote'}, COMMS);
   const QST = {draft:'Draft', sent:'Sent', accepted:'Accepted', declined:'Declined'};
   const accNo = n => `AC-${n}`;
   const root = () => $('view-accounts');
@@ -229,7 +230,7 @@ const ACCOUNTS = (()=>{
     const a = detail.acc;
     const tabs = [['overview','Overview'],['quotes',`Quotes (${detail.quotes.length})`],['invoices','Invoices'],['comms',`Communication (${detail.comms.length})`]];
     const tel = a.phone ? `<a class="btn" href="tel:${esc(digits(a.phone))}" data-log-call>Call</a>` : '';
-    const mail = a.email ? `<button class="btn" type="button" id="acEmail">Email</button>` : '';
+    const mail = (a.email || detail.contacts.some(c=>c.email) || typeof MAIL!=='undefined') ? `<button class="btn" type="button" id="acEmail">Email</button>` : '';
     root().innerHTML = `
     <div class="viewbar"><div>
         <button class="linkbtn" type="button" id="acBack">← All accounts</button>
@@ -244,7 +245,8 @@ const ACCOUNTS = (()=>{
     root().querySelectorAll('[data-actab]').forEach(b=> b.onclick = ()=> setTab(b.dataset.actab));
     $('acQuote').onclick = ()=> newQuote(null);
     $('acLog').onclick = ()=>{ composer = {kind:'note'}; setTab('comms'); };
-    if($('acEmail')) $('acEmail').onclick = ()=>{
+    if($('acEmail') && typeof MAIL!=='undefined'){ $('acEmail').onclick = ()=> MAIL.composeAccount(detail); }
+    else if($('acEmail')) $('acEmail').onclick = ()=>{
       location.href = `mailto:${encodeURIComponent(a.email)}?subject=${encodeURIComponent('Purgō')}`;
       composer = {kind:'email', direction:'out', to:a.email}; setTab('comms'); flash('Your email app is opening. Log what you sent below.');
     };
@@ -283,7 +285,7 @@ const ACCOUNTS = (()=>{
           <div class="svc-head"><h2>Contacts</h2><button class="btn sm" type="button" id="acAddC">+ Add contact</button></div>
           <div class="qlist" style="margin-top:8px">${detail.contacts.length || editContact ? '' : '<p class="hint">Add people at this account: a partner, a tenant, a property manager or accounts team.</p>'}
           ${detail.contacts.map(c=> editContact===c.id ? contactForm(c) : `<div class="qitem ac-ci"><div class="m"><b>${esc(c.name)}${c.is_primary?' <span class="pill sent">Main</span>':''}</b><small>${esc([c.role, c.phone, c.email].filter(Boolean).join(' · '))}</small>${c.notes?`<small>${esc(c.notes)}</small>`:''}</div>
-            <div class="qacts">${c.phone?`<a class="btn sm" href="tel:${esc(digits(c.phone))}">Call</a>`:''}${c.email?`<a class="btn sm" href="mailto:${esc(c.email)}">Email</a>`:''}<button class="btn sm" type="button" data-cedit="${c.id}">Edit</button></div></div>`).join('')}
+            <div class="qacts">${c.phone?`<a class="btn sm" href="tel:${esc(digits(c.phone))}">Call</a>`:''}${c.email?`<button class="btn sm" type="button" data-cmail="${esc(c.email)}">Email</button>`:''}<button class="btn sm" type="button" data-cedit="${c.id}">Edit</button></div></div>`).join('')}
           ${editContact==='new' ? contactForm({}) : ''}</div>
         </section>
         ${a.kind==='com' ? portfolioCard() : ''}
@@ -388,9 +390,9 @@ const ACCOUNTS = (()=>{
         <p class="hint" style="margin-top:6px">Every call, text, email, visit and note with this customer, with quote activity alongside. Emails will appear here automatically once the Purgō mailbox is connected.</p>
         <ol class="ac-tl">${ev.map(e=> e.type==='quote'
           ? `<li class="q ${e.st||''}"><i></i><div><b>${esc(e.text)}</b><small>${fmtDT(e.at)} · ${esc(e.sub)}</small></div><button class="btn sm" type="button" data-openq="${e.id}">Open</button></li>`
-          : `<li class="${e.c.kind}"><i></i><div><b>${COMMS[e.c.kind]}${e.c.kind!=='note' && e.c.direction ? (e.c.direction==='in' ? ' from customer' : ' to customer') : ''}${e.c.subject?`: ${esc(e.c.subject)}`:''}</b>
+          : `<li class="${e.c.kind}"><i></i><div><b>${e.c.kind==='quote' ? esc(e.c.subject||'Online quote') : `${COMMS_ALL[e.c.kind]||e.c.kind}${e.c.kind!=='note' && e.c.direction ? (e.c.direction==='in' ? ' from customer' : ' to customer') : ''}${e.c.subject?`: ${esc(e.c.subject)}`:''}`}</b>
               <small>${fmtDT(e.c.occurred_at)} · ${esc(e.c.created_by_name||'')}${e.c.to_addr?' · to '+esc(e.c.to_addr):''}${e.c.from_addr?' · from '+esc(e.c.from_addr):''}</small>
-              ${e.c.body ? `<p>${esc(e.c.body).replace(/\n/g,'<br>')}</p>` : ''}</div>${ROLE==='admin' ? `<button class="btn sm del" type="button" data-cmdel="${e.c.id}">Delete</button>` : ''}</li>`).join('') || '<p class="hint">Nothing logged yet.</p>'}</ol>
+              ${e.c.body ? `${e.c.body.split('\n').length>6 || e.c.body.length>420 ? `<p class="clamp">${esc(e.c.body).replace(/\n/g,'<br>')}</p><button class="linkbtn more" type="button">Show more</button>` : `<p>${esc(e.c.body).replace(/\n/g,'<br>')}</p>`}` : ''}</div>${ROLE==='admin' ? `<button class="btn sm del" type="button" data-cmdel="${e.c.id}">Delete</button>` : ''}</li>`).join('') || '<p class="hint">Nothing logged yet.</p>'}</ol>
       </section>`;
   }
 
@@ -462,6 +464,7 @@ const ACCOUNTS = (()=>{
     }
     // contacts
     if($('acAddC')) $('acAddC').onclick = ()=>{ editContact = 'new'; renderDetail(); $('ccName').focus(); };
+    root().querySelectorAll('[data-cmail]').forEach(b=> b.onclick = ()=>{ if(typeof MAIL!=='undefined') MAIL.composeAccount(detail, b.dataset.cmail); else location.href = 'mailto:' + b.dataset.cmail; });
     root().querySelectorAll('[data-cedit]').forEach(b=> b.onclick = ()=>{ editContact = b.dataset.cedit; renderDetail(); });
     if($('ccCancel')) $('ccCancel').onclick = ()=>{ editContact = null; renderDetail(); };
     if($('ccSave')) $('ccSave').onclick = async ()=>{
@@ -520,6 +523,7 @@ const ACCOUNTS = (()=>{
       if(error){ $('cmSave').disabled = false; flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return; }
       composer = null; await reload(); flash('Logged');
     };
+    root().querySelectorAll('.ac-tl .more').forEach(x=> x.onclick = ()=>{ const p = x.previousElementSibling; p.classList.toggle('open'); x.textContent = p.classList.contains('open') ? 'Show less' : 'Show more'; });
     root().querySelectorAll('[data-cmdel]').forEach(b=> b.onclick = async ()=>{
       if(!confirmInline('cmdel'+b.dataset.cmdel, 'Press Delete again to remove this entry.')) return;
       const {error} = await sb.from('account_comms').delete().eq('id', b.dataset.cmdel);
@@ -560,6 +564,6 @@ const ACCOUNTS = (()=>{
     if(!$('view-accounts').hidden){ back(); return; }
     cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); }catch(e){}
   }, true);
-  return {onShow, open, accNo, pickForQuote, reset:()=>{ list = []; loaded = false; cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); sessionStorage.removeItem('acTab'); }catch(e){} }};
+  return {onShow, open, accNo, pickForQuote, refresh:()=>{ if(cur && detail && !$('view-accounts').hidden) reload(); }, reset:()=>{ list = []; loaded = false; cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); sessionStorage.removeItem('acTab'); }catch(e){} }};
 })();
 if(typeof ME!=='undefined' && ME && !document.getElementById('view-accounts').hidden) ACCOUNTS.onShow();

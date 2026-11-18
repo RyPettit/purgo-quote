@@ -629,6 +629,7 @@ function syncNotesBox(std){
 }
 const ACCEPT_TITLE = 'How to accept this quote';
 const ACCEPT_TEXT = 'Just reply to the email you got this quote from and confirm any services you would like to book. Alternatively, if you would like to discuss any of the quoted work, please contact us on 07930 877034.';
+const ACCEPT_ONLINE = 'Press the button to accept this quote online in a couple of clicks, or just reply to the email. If you would like to discuss any of the quoted work, please call us on 07930 877034.';
 function quoteModel(o){
   const groups = o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:l.amt})), sub:g.lines.reduce((s,l)=>s+l.amt,0)}));
   const std = standardNotes(o); syncNotesBox(std);
@@ -641,7 +642,8 @@ function quoteModel(o){
     notes
   };
 }
-function quoteHTML(m){
+function quoteHTML(m, opts){
+  opts = opts || {};
   // inline styles so the table survives being pasted into an email
   const F = "font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;";
   const td = 'padding:6px 10px;border-bottom:1px solid #d4e4ee;vertical-align:top;';
@@ -663,14 +665,17 @@ function quoteHTML(m){
   h += `<tr><td style="padding:10px;text-align:right;font-weight:800;background:#132f47;color:#fff">Total${m.vat?'':' (no VAT)'}</td><td style="padding:10px;${num}font-weight:800;font-size:16px;background:#132f47;color:#fff">${gbp(m.total)}</td></tr>`;
   h += `</tfoot></table>`;
   if(m.annual) h += `<p style="margin:10px 0 0">Price per visit. ${m.annual.visits} visits per year = <b>${gbp(m.annual.total)}</b> a year.</p>`;
-  h += `<div style="margin-top:12px;padding:10px 12px;background:#e2eff7;border-left:4px solid #326986;border-radius:4px"><div style="font-weight:800;margin-bottom:3px">${ACCEPT_TITLE}</div>${esc(ACCEPT_TEXT)}</div>`;
+  h += opts.acceptUrl
+    ? `<div data-accept style="margin-top:12px;padding:12px 14px;background:#e2eff7;border-left:4px solid #326986;border-radius:4px"><div style="font-weight:800;margin-bottom:3px">${ACCEPT_TITLE}</div>${esc(ACCEPT_ONLINE)}<div style="margin-top:10px"><a href="${esc(opts.acceptUrl)}" style="display:inline-block;background:#132f47;color:#ffffff;text-decoration:none;font-weight:700;padding:10px 20px;border-radius:999px">View and accept your quote</a></div></div>`
+    : `<div style="margin-top:12px;padding:10px 12px;background:#e2eff7;border-left:4px solid #326986;border-radius:4px"><div style="font-weight:800;margin-bottom:3px">${ACCEPT_TITLE}</div>${esc(ACCEPT_TEXT)}</div>`;
   // bullets drawn as a table so they line up in every email app
   h += `<div style="margin-top:14px;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#326986">Notes</div>`;
   h += `<table style="${F}border-collapse:collapse;margin-top:6px;font-size:14px;color:#132f47">${m.notes.map(n=>`<tr><td style="vertical-align:top;padding:2px 8px 4px 2px;color:#326986;font-weight:800">•</td><td style="vertical-align:top;padding:2px 0 4px">${esc(n)}</td></tr>`).join('')}</table>`;
   h += `<p style="margin:14px 0 0;color:#53708a">Purgō, family run exterior cleaning<br>Tel 07930 877034 · www.purgo-clean.com</p></div>`;
   return h;
 }
-function quoteText(m){
+function quoteText(m, opts){
+  opts = opts || {};
   const W = 54, pad = (l,a) => { const s = gbp(a); const t = l.length > W-s.length-1 ? l.slice(0, W-s.length-2)+'…' : l; return t + ' '.repeat(Math.max(1, W - t.length - s.length)) + s; };
   const rule = '-'.repeat(W);
   const L = ['PURGŌ', `Quote ${m.ref} · ${m.date}`, ''];
@@ -678,7 +683,7 @@ function quoteText(m){
   m.groups.forEach(g=>{ L.push(g.name.toUpperCase()); g.lines.forEach(l=>L.push(pad(l.label,l.amt))); L.push(pad(`${g.name} subtotal`, g.sub)); L.push(''); });
   L.push(rule, pad('Subtotal', m.sub)); if(m.vat) L.push(pad(`VAT ${m.vatRate}%`, m.vat)); L.push(pad(m.vat?'TOTAL':'TOTAL (no VAT)', m.total), rule, '');
   if(m.annual) L.push(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, '');
-  L.push(ACCEPT_TITLE.toUpperCase(), ACCEPT_TEXT, '');
+  L.push(ACCEPT_TITLE.toUpperCase(), opts.acceptUrl ? ACCEPT_ONLINE + '\n' + opts.acceptUrl : ACCEPT_TEXT, '');
   L.push('NOTES'); m.notes.forEach(n=>L.push('• '+n));
   L.push('', 'Purgō, family run exterior cleaning', 'Tel 07930 877034 · www.purgo-clean.com');
   return L.join('\n');
@@ -738,6 +743,17 @@ async function quotePdf(){
   const m = lastQuoteModel; if(!m || !m.groups.length){ flash('Add some work to the quote first'); return; }
   const btn = $('pdfQ'); btn.disabled = true; const label = btn.textContent; btn.textContent = 'Making PDF…';
   try{
+    const doc = await buildQuotePdf(m);
+    doc.save(pdfName(m));
+    flash('Quote PDF saved');
+  }catch(e){ flash('Could not make the PDF: ' + (e.message||e)); }
+  btn.disabled = false; btn.textContent = label;
+}
+const pdfName = m => `${m.fileRef.replace(/–/g,'-').replace(/[\\/:*?"<>|]/g,'').slice(0,80)}.pdf`;
+// the customer's PDF; with opts.acceptUrl the "how to accept" box links to the online quote
+async function buildQuotePdf(m, opts){
+  opts = opts || {};
+  {
     await loadScript('vendor/jspdf-2.5.2.umd.min.js'); await loadScript('vendor/pdf-fonts.js?v=1');
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({unit:'mm', format:'a4'});
@@ -786,9 +802,11 @@ async function quotePdf(){
     doc.setFillColor(...NAVY); doc.rect(L, y, W, 10, 'F'); font('bold', 12, [255,255,255]);
     doc.text(`Total${m.vat?'':' (no VAT)'}`, R-38, y+6.6, {align:'right'}); doc.text(gbp(m.total), R-3, y+6.6, {align:'right'}); y += 14;
     if(m.annual){ font('normal', 10.5); const t = doc.splitTextToSize(`Price per visit. ${m.annual.visits} visits per year = ${gbp(m.annual.total)} a year.`, W); room(t.length*5); t.forEach(s=>{ doc.text(s, L, y); y += 5; }); y += 3; }
-    { font('normal', 10); const t = doc.splitTextToSize(ACCEPT_TEXT, W-10); const h = 9 + t.length*4.6 + 3; room(h);
+    { font('normal', 10); const t = doc.splitTextToSize(opts.acceptUrl ? ACCEPT_ONLINE : ACCEPT_TEXT, W-10); const h = 9 + t.length*4.6 + 3 + (opts.acceptUrl ? 7 : 0); room(h);
       doc.setFillColor(...SOFT); doc.rect(L, y, W, h, 'F'); doc.setFillColor(...WATER); doc.rect(L, y, 1.4, h, 'F');
-      font('bold', 11); doc.text(ACCEPT_TITLE, L+5, y+6.2); font('normal', 10); t.forEach((s,i)=> doc.text(s, L+5, y+11.5+i*4.6)); y += h + 7; }
+      font('bold', 11); doc.text(ACCEPT_TITLE, L+5, y+6.2); font('normal', 10); t.forEach((s,i)=> doc.text(s, L+5, y+11.5+i*4.6));
+      if(opts.acceptUrl){ font('bold', 10, WATER); doc.textWithLink('Accept this quote online  ›', L+5, y+11.5+t.length*4.6+3, {url:opts.acceptUrl}); }
+      y += h + 7; }
     if(m.notes.length){
       room(14); font('bold', 8.5, WATER); doc.text('NOTES', L, y, {charSpace:.3}); y += 5.5;
       font('normal', 10);
@@ -796,10 +814,8 @@ async function quotePdf(){
         doc.text('•', L+0.5, y); t.forEach((s,i)=> doc.text(s, L+5, y + i*4.6)); y += t.length*4.6 + 1.5; });
     }
     footer();
-    doc.save(`${m.fileRef.replace(/–/g,'-').replace(/[\\/:*?"<>|]/g,'').slice(0,80)}.pdf`);
-    flash('Quote PDF saved');
-  }catch(e){ flash('Could not make the PDF: ' + (e.message||e)); }
-  btn.disabled = false; btn.textContent = label;
+    return doc;
+  }
 }
 $('pdfQ').onclick = quotePdf;
 function renderLock(o, today){
@@ -986,6 +1002,7 @@ function show(view){
   if(view==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.onShow();
   if(view==='portal' && typeof PORTAL!=='undefined') PORTAL.onShow();
   if(view==='accounts' && typeof ACCOUNTS!=='undefined') ACCOUNTS.onShow();
+  if(view==='admin' && typeof MAIL!=='undefined') MAIL.renderAdmin();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
@@ -1050,6 +1067,7 @@ $('signOut').onclick = async ()=>{
   if(typeof PORTFOLIO!=='undefined') PORTFOLIO.reset();
   if(typeof PORTAL!=='undefined') PORTAL.reset();
   if(typeof ACCOUNTS!=='undefined') ACCOUNTS.reset();
+  if(typeof MAIL!=='undefined') MAIL.stop();
   $('newJob').click(); $('on-gt').checked = false; $('on-wn').checked = false; $('on-rf').checked = false; $('on-pw').checked = true; syncSvc();
   await sb.auth.signOut().catch(()=>{});
   ME = null; ROLE = null; document.body.classList.remove('is-admin','is-customer');
@@ -1086,6 +1104,7 @@ async function enter(user){
   const v = location.hash.slice(1);
   show(VIEWS.includes(v) && v!=='login' ? v : 'quote');
   render();
+  if(typeof MAIL!=='undefined') MAIL.start();
 }
 
 /* ---------- price list ---------- */
@@ -1251,7 +1270,7 @@ async function loadQuotes(){
   quotesLoading = true; renderQuoteList();
   if(!sb || !navigator.onLine){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); renderQuoteList(); return; }
   try{
-    const sel = 'id,ref,quote_no,status,customer,address,postcode,phone,email,total,created_at,created_by,created_by_name,sent_at,follow_up_at,follow_up_count,last_follow_up' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
+    const sel = 'id,ref,quote_no,status,customer,address,postcode,phone,email,total,created_at,created_by,created_by_name,sent_at,follow_up_at,follow_up_count,last_follow_up,viewed_at,accepted_at,accepted_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
     const {data, error} = await sb.from('quotes').select(sel).order('created_at', {ascending:false}).limit(500);
     if(error) throw error;
     quotes = data; quotesLoaded = true; LS.set('purgoQuotes', quotes);
@@ -1276,31 +1295,31 @@ function renderQuoteList(){
     const prof = ROLE==='admin' ? (qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : `<small style="display:block;color:var(--muted);font-size:.72rem">open for profit</small>`) : '';
     const status = x.queued ? '<span class="pill queued">Waiting</span>' :
       `<select data-status="${x.id}" aria-label="Status">${['draft','sent','accepted','declined'].map(s=>`<option value="${s}" ${s===x.status?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select>`;
-    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small>${x.status==='sent' && x.follow_up_at ? `<small class="fu-next">${new Date(x.follow_up_at)<=new Date() ? 'Follow-up due' : 'Follow up '+fmtDay(x.follow_up_at)}${x.follow_up_count?` · followed up ${x.follow_up_count}×`:''}</small>` : ''}<small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts"><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
+    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small>${x.status==='sent' && x.follow_up_at ? `<small class="fu-next">${new Date(x.follow_up_at)<=new Date() ? 'Follow-up due' : 'Follow up '+fmtDay(x.follow_up_at)}${x.follow_up_count?` · followed up ${x.follow_up_count}×`:''}</small>` : ''}${x.accepted_name ? `<small class="fu-next ok">Accepted online by ${esc(x.accepted_name)}</small>` : x.viewed_at && x.status==='sent' ? `<small class="fu-next">Customer opened it ${fmtDay(x.viewed_at)}</small>` : ''}<small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts"><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
   }).join('') : `<p class="hint">${quotesLoading && !quotes.length ? 'Loading saved quotes…' : quotes.length ? 'No quotes match the search or filters above.' : quotesErr ? '' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
   if(quotesErr) $('qList').insertAdjacentHTML('afterbegin', `<p class="note w">${esc(quotesErr)} <button class="btn sm" type="button" onclick="loadQuotes()">Try again</button></p>`);
 }
 ['qSearch','qStatus','qBy'].forEach(id=> $(id).addEventListener('input', renderQuoteList));
 $('qRefresh').onclick = loadQuotes;
+// change a saved quote's status (Saved quotes list, emailing a quote). Returns false if it failed.
+async function setQuoteStatus(id, st, quiet){
+  const fresh = await sb.from('quotes').select('status,sent_at,follow_up_at,state').eq('id', id).maybeSingle();
+  const q0 = fresh.data || quotes.find(x=>x.id===id) || {}, upd = {status:st};
+  if(st==='sent'){ if(!q0.sent_at) upd.sent_at = new Date().toISOString(); if(!q0.follow_up_at || q0.status!=='sent') upd.follow_up_at = q0.follow_up_at && q0.status==='sent' ? q0.follow_up_at : addDays(R.fuFirst||3); }
+  else upd.follow_up_at = null;   // accepted, declined or back to draft: no more reminders
+  // a quote sent before prices were remembered: remember today's prices now so it stays fixed from here on
+  if(st!=='draft' && q0.state && !q0.state.pricedWith) upd.state = Object.assign({}, q0.state, {pricedWith:priceSnap()});
+  const {error} = await sb.from('quotes').update(upd).eq('id', id);
+  if(error){ flash('Status not changed: ' + (isNetErr(error)?'no connection':error.message)); loadQuotes(); return false; }
+  const q = quotes.find(x=>x.id===id); if(q){ Object.assign(q, upd); delete q.state; LS.set('purgoQuotes', quotes); }
+  renderFollowUps(); renderQuoteList();
+  if(!quiet && st==='sent' && upd.follow_up_at) flash(`Follow-up reminder set for ${fmtDay(upd.follow_up_at)}`);
+  if(editing && editing.id===id){ pricing.status = st; if(upd.state) pricing.snap = upd.state.pricedWith; render(); }
+  return true;
+}
 document.addEventListener('change', async e=>{
   const id = e.target.dataset && e.target.dataset.status; if(!id) return;
-  const q0 = quotes.find(x=>x.id===id) || {}, st = e.target.value, upd = {status:st};
-  if(st==='sent'){ if(!q0.sent_at) upd.sent_at = new Date().toISOString(); if(!q0.follow_up_at) upd.follow_up_at = addDays(R.fuFirst||3); }
-  else upd.follow_up_at = null;   // accepted, declined or back to draft: no more reminders
-  const {error} = await sb.from('quotes').update(upd).eq('id', id);
-  if(error){ flash('Status not changed: ' + (isNetErr(error)?'no connection':error.message)); loadQuotes(); return; }
-  const q = quotes.find(x=>x.id===id); if(q){ Object.assign(q, upd); LS.set('purgoQuotes', quotes); }
-  renderFollowUps(); renderQuoteList();
-  if(st==='sent' && upd.follow_up_at) flash(`Follow-up reminder set for ${fmtDay(upd.follow_up_at)}`);
-  if(editing && editing.id===id){ pricing.status = e.target.value; render(); }
-  // a quote sent before prices were remembered: remember today's prices now so it stays fixed from here on
-  if(e.target.value!=='draft'){
-    const r = await sb.from('quotes').select('state').eq('id', id).maybeSingle();
-    if(r.data && r.data.state && !r.data.state.pricedWith){
-      await sb.from('quotes').update({state:Object.assign({}, r.data.state, {pricedWith:priceSnap()})}).eq('id', id);
-      if(editing && editing.id===id){ pricing.snap = priceSnap(); render(); }
-    }
-  }
+  await setQuoteStatus(id, e.target.value);
 });
 document.addEventListener('click', async e=>{
   const b = e.target.closest('[data-openq],[data-openq-local]'); if(!b) return;

@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=6fbeb82c0b">
+<link rel="stylesheet" href="purgo.css?v=18d8be9191">
 </head>
 <body>
 <header class="topbar">
@@ -260,7 +260,7 @@
           <div id="qPreview" class="qpreview"></div>
           <label class="f" style="margin-top:12px">Notes on the quote <small class="hint">one per line</small><textarea id="qNotes" rows="10"></textarea></label>
           <div class="qn-bar"><span class="hint" id="qNotesState">Standard notes</span><button class="linkbtn" type="button" id="qNotesReset" hidden>Reset to standard notes</button></div>
-          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap"><button class="btn pri" type="button" id="copyQ">Copy quote</button><button class="btn" type="button" id="pdfQ">Quote PDF</button><span id="copied" class="hint" hidden>Copied</span></div>
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap"><button class="btn pri" type="button" id="emailQ">Email quote</button><button class="btn" type="button" id="copyQ">Copy quote</button><button class="btn" type="button" id="pdfQ">Quote PDF</button><span id="copied" class="hint" hidden>Copied</span></div>
         </div>
       </div>
     </aside>
@@ -286,7 +286,7 @@
   </section>
 </main>
 
-<!-- ACCOUNTS (filled by accounts.js?v=ef78066c0b) -->
+<!-- ACCOUNTS (filled by accounts.js?v=69f79ebbfe) -->
 <main id="view-accounts" class="wrap" hidden></main>
 <!-- PORTFOLIOS (filled by portfolio.js?v=0aa4f8f075) -->
 <main id="view-portfolio" class="wrap" hidden></main>
@@ -400,6 +400,7 @@
         <div class="fields" style="margin-top:14px"><label class="f">Default apply m²/hr<input type="number" step="any" min="1" id="r_chemApp" data-rk="chemApp"></label></div>
       </div>
     </section>
+  <section class="card" id="mailCard"></section>
   <section class="card">
     <h2>Staff</h2>
     <p class="hint">To add someone: in Supabase open <b>Authentication → Users → Add user → Create new user</b>, enter their email and a temporary password, and tick <b>Auto Confirm User</b>. They appear here as staff. Switch someone off when they leave; their quotes stay.</p>
@@ -411,10 +412,11 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=49818a44de"></script>
+<script src="purgo.js?v=3e01d42fe8"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=0aa4f8f075"></script>
-<script src="accounts.js?v=ef78066c0b"></script>
+<script src="mail.js?v=167b804e0e"></script>
+<script src="accounts.js?v=69f79ebbfe"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

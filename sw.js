@@ -1,8 +1,8 @@
 // Purgō Portal service worker: lets the app open and quote with no signal.
 // Network first, cache as fallback, so a new release is picked up straight away
 // and the last good copy is used when there is no signal.
-const VERSION = 'purgo-87ad19d3ca';
-const SHELL = ['./', 'index.html', 'purgo.css?v=6fbeb82c0b', 'purgo.js?v=49818a44de', 'measure.js?v=f88bc2a42d', 'portfolio.js?v=0aa4f8f075', 'portal.js?v=4afff4439d', 'accounts.js?v=ef78066c0b', 'config.js', 'vendor/supabase-2.117.3.js',
+const VERSION = 'purgo-33d1ace62b';
+const SHELL = ['./', 'index.html', 'purgo.css?v=18d8be9191', 'purgo.js?v=3e01d42fe8', 'measure.js?v=f88bc2a42d', 'portfolio.js?v=0aa4f8f075', 'portal.js?v=4afff4439d', 'accounts.js?v=69f79ebbfe', 'mail.js?v=167b804e0e', 'config.js', 'vendor/supabase-2.117.3.js',
   'postcodes.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png',
   'icons/apple-touch-icon.png', 'fonts/plus-jakarta-sans.woff2', 'brand/emblem-light.png', 'brand/wordmark-light.png',
   'brand/logo-navy.png', 'brand/logo-light.png'];
@@ -20,6 +20,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // database calls go straight to the network
+  if (req.mode === 'navigate' && !/\/(index\.html)?$/.test(url.pathname)) return; // other pages (e.g. a customer's quote link) aren't the app
   const key = req.mode === 'navigate' ? 'index.html' : req;
   e.respondWith(
     fetch(req).then(r => {
