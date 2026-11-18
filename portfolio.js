@@ -851,7 +851,7 @@ const PORTFOLIO = (()=>{
         ${P.disc?`<div><span>Portfolio discount ${num(st.discPct)}%</span><b>–${gbp(P.disc)}</b></div>`:''}
         ${P.rams?`<div><span>RAMS / method statement</span><b>${gbp(P.rams)}</b></div>`:''}
         ${st.vat?`<div><span>VAT ${R.vat}%</span><b>${gbp(P.vat)}</b></div>`:''}
-        <div class="g"><span>Total per visit</span><span>${gbp(P.gross)}</span></div>
+        <div class="g"><span>Total</span><span>${gbp(P.gross)}</span></div>
         ${P.visits>1?`<div><span>${P.visits} visits per year</span><b>${gbp(P.annual)} / year</b></div>`:''}
       </div>
       ${st.showPhotos && !opts.noPhotos?`<h3>Property survey images</h3><div class="pf-q-props">${P.priced.map(s=>`<div class="pf-q-prop"><div class="imgs">${okImg(s.photos.aerial)?`<img src="${esc(src(s.photos.aerial))}" alt="">`:'<div class="no">No aerial</div>'}${okImg(s.photos.street)?`<img src="${esc(src(s.photos.street))}" alt="">`:'<div class="no">No street view</div>'}</div><div class="tx"><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><br>${calc(s).m.toFixed(0)} m gutter · ${esc(s.data.storeys||'?')} storey${num(s.data.storeys)===1?'':'s'}${s.data.method?' · '+esc(s.data.method):''}</div></div>`).join('')}</div><p class="pf-q-small">Aerial and Street View imagery © Google.</p>`:''}
@@ -890,7 +890,7 @@ const PORTFOLIO = (()=>{
     $('pfCopy').onclick = async ()=>{
       const P = portfolioTotals();
       const lines = ['#\tSite\tAddress\tPostcode\tType\tStoreys\tGutter (m)\tPrice', ...P.priced.map(s=>{ const c = calc(s); return [s.ref, s.name, s.address, s.postcode, s.data.type, s.data.storeys, c.m.toFixed(0), gbp(c.price)].join('\t'); }), '', `Subtotal\t\t\t\t\t\t\t${gbp(P.sub)}`];
-      if(P.disc) lines.push(`Discount ${S().discPct}%\t\t\t\t\t\t\t-${gbp(P.disc)}`); if(P.rams) lines.push(`RAMS\t\t\t\t\t\t\t${gbp(P.rams)}`); if(S().vat) lines.push(`VAT\t\t\t\t\t\t\t${gbp(P.vat)}`); lines.push(`Total per visit\t\t\t\t\t\t\t${gbp(P.gross)}`);
+      if(P.disc) lines.push(`Discount ${S().discPct}%\t\t\t\t\t\t\t-${gbp(P.disc)}`); if(P.rams) lines.push(`RAMS\t\t\t\t\t\t\t${gbp(P.rams)}`); if(S().vat) lines.push(`VAT\t\t\t\t\t\t\t${gbp(P.vat)}`); lines.push(`Total\t\t\t\t\t\t\t${gbp(P.gross)}`);
       try{ await navigator.clipboard.writeText(lines.join('\n')); flash('Schedule copied'); }catch(e){ flash('Copy was blocked by the browser'); }
     };
   }
