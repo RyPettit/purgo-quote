@@ -300,7 +300,7 @@ const PORTFOLIO = (()=>{
     const i = all.findIndex(x=>x.id===s.id), prev = all[i-1], next = all[i+1];
     const slot = (kind, title, img, link) => `
       <div class="pf-slot ${img&&img.reviewed?'reviewed':''}" tabindex="0" data-slot="${kind}">
-        <div class="pf-slot-h"><b>${title}</b>${link}</div>
+        <div class="pf-slot-h"><b>${title}</b><span class="pf-slot-a"><button type="button" class="btn sm" data-gtake="${kind}" title="Take a fresh ${title.toLowerCase()} image from Google at this property's pin">Take from Google</button>${link}</span></div>
         <div class="pf-slot-b">${img ? `<img src="${esc(src(img))}" data-full="${esc(img.path)}" alt="${title}">` : `<div class="hint" style="text-align:center"><b>Click here, then paste a screenshot</b> (Ctrl+V / ⌘V)<br>or drop an image · <a href="#" data-pick="${kind}">choose file</a></div>`}</div>
         ${img ? revBtn(img, `data-rev="${kind}"`) + `<button type="button" class="btn sm pf-x" data-clear="${kind}">Remove</button>` : ''}
       </div>`;
@@ -430,6 +430,11 @@ const PORTFOLIO = (()=>{
     b.querySelectorAll('[data-rev]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); toggleRev(s, s.photos[e.dataset.rev]); }));
     b.querySelectorAll('[data-revp]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); toggleRev(s, s.photos.site[+e.dataset.revp]); }));
     b.querySelectorAll('[data-clear]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); removeImg(s, e.dataset.clear); }));
+    b.querySelectorAll('[data-gtake]').forEach(e=> e.addEventListener('click', async ev=>{
+      ev.stopPropagation(); const k = e.dataset.gtake; e.disabled = true; e.textContent = 'Taking…';
+      try{ await takeGoogle(s, k); render(); flash(k==='aerial' ? 'Aerial image updated from Google' : 'Street View image updated from Google'); }
+      catch(x){ flash(x.message||String(x)); e.disabled = false; e.textContent = 'Take from Google'; }
+    }));
     b.querySelectorAll('[data-rm]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); removeImg(s, 'site', +e.dataset.rm); }));
     b.querySelectorAll('[data-full]').forEach(e=> e.addEventListener('click', ev=>{ ev.stopPropagation(); const lb = $('pfLb'); lb.querySelector('img').src = urls[e.dataset.full] || e.src; lb.hidden = false; }));
     $('pfLb').onclick = ()=> $('pfLb').hidden = true;
@@ -505,6 +510,36 @@ const PORTFOLIO = (()=>{
     if(error) throw error;
     const {data} = await sb.storage.from(BUCKET).createSignedUrl(path, 60*60*6); if(data) urls[path] = data.signedUrl;
     return {path, caption:'', added:new Date().toISOString(), addedBy:ME.name};
+  }
+  // Fresh still images from Google at the property's pin: satellite (Maps Static API) and the nearest
+  // official Street View panorama, turned to face the building (Street View Static API).
+  const bearing = (a, b) => { const t = x=>x*Math.PI/180, y = Math.sin(t(b.lng-a.lng))*Math.cos(t(b.lat)), x = Math.cos(t(a.lat))*Math.sin(t(b.lat)) - Math.sin(t(a.lat))*Math.cos(t(b.lat))*Math.cos(t(b.lng-a.lng)); return (Math.atan2(y, x)*180/Math.PI + 360) % 360; };
+  async function pinOf(s){
+    if(s.lat && s.lng) return {lat:+s.lat, lng:+s.lng};
+    await MEASURE.loadGoogle(); const q = [s.address, s.postcode].filter(Boolean).join(', ');
+    const {results} = await new google.maps.Geocoder().geocode({address:q, region:'gb'});
+    if(!results || !results[0]) throw new Error('Address not found on the map – pin the building first');
+    const l = results[0].geometry.location; s.lat = l.lat(); s.lng = l.lng(); return {lat:s.lat, lng:s.lng};
+  }
+  async function googleBlob(s, kind){
+    const key = (window.PURGO_CONFIG||{}).googleMapsKey; if(!key) throw new Error('Google Maps is not set up');
+    const p = await pinOf(s), at = `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`, G = 'https://maps.googleapis.com/maps/api/';
+    let url;
+    if(kind==='aerial') url = `${G}staticmap?center=${at}&zoom=20&size=640x640&scale=2&maptype=satellite&key=${key}`;
+    else {
+      const m = await (await fetch(`${G}streetview/metadata?location=${at}&radius=80&source=outdoor&key=${key}`)).json();
+      if(m.status==='REQUEST_DENIED') throw new Error('Google refused – the Street View Static API is not allowed on the app\'s Google key yet');
+      if(m.status!=='OK') throw new Error('No Google Street View near this building – take a street photo on site');
+      url = `${G}streetview?size=640x640&pano=${m.pano_id}&heading=${bearing(m.location, p).toFixed(0)}&pitch=12&fov=80&key=${key}`;
+    }
+    const r = await fetch(url);
+    if(!r.ok) throw new Error(r.status===403 ? `Google refused – the ${kind==='aerial'?'Maps Static':'Street View Static'} API is not allowed on the app's Google key yet` : `Google error ${r.status}`);
+    return await r.blob();
+  }
+  async function takeGoogle(s, kind){
+    const rec = await uploadImg(s, kind, await googleBlob(s, kind)); rec.source = 'google';
+    const old = s.photos[kind]; s.photos[kind] = rec; if(old && old.path) sb.storage.from(BUCKET).remove([old.path]).catch(()=>{});
+    saveSite(s, 0);
   }
   async function addImages(s, kind, files, quiet){
     const many = kind==='site' || kind==='before' || kind==='after';
@@ -1002,6 +1037,12 @@ const PORTFOLIO = (()=>{
         <p class="hint">Pick many images at once. Files named with the property number and type – e.g. <b>07_aerial.jpg</b>, <b>07_street.jpg</b>, <b>07_site_1.jpg</b> – go straight onto that property. Job photos: <b>07_before_1.jpg</b>, <b>07_after_1.jpg</b> (hidden from the customer until ticked).</p>
         <input type="file" id="pfImgImp" accept="image/*" multiple>
         <p class="hint" id="pfImgMsg"></p>
+      </section>
+      <section class="card"><h2>Retake survey images from Google</h2>
+        <p class="hint">Replaces the saved aerial and Street View images with fresh ones taken at each property's current pin – useful after moving a pin. Reviewed images are left alone unless you tick the box.</p>
+        <div class="fields"><label class="f wide">Property numbers<input id="pfGRefs" placeholder="e.g. 6, 9, 11 – or leave blank for all"></label></div>
+        <div class="pf-tools" style="margin-top:8px"><label class="ck"><input type="checkbox" id="pfGA" checked>Aerial</label><label class="ck"><input type="checkbox" id="pfGS" checked>Street View</label><label class="ck"><input type="checkbox" id="pfGRev">Include reviewed images</label><span style="flex:1"></span><button class="btn pri" type="button" id="pfGGo">Retake images</button></div>
+        <p class="hint" id="pfGMsg"></p>
       </section></div>`;
     bindSettingInputs(box, ()=>{});
     const imp = $('pfImp'); imp.oninput = ()=>{ const n = parseImport(imp.value).length; $('pfImpN').textContent = n ? `${n} found` : ''; };
@@ -1015,6 +1056,22 @@ const PORTFOLIO = (()=>{
       const {data, error} = await sb.from('portfolio_sites').insert(ins).select('*');
       if(error){ flash('Could not import: ' + error.message); return; }
       (data||[]).forEach(s=>{ siteData(s); sites[s.id] = s; }); imp.value = ''; flash(`${data.length} properties added`); tab = 'summary'; render();
+    };
+    $('pfGGo').onclick = async ()=>{
+      const want = $('pfGRefs').value.split(/[^0-9]+/).filter(Boolean).map(Number), kinds = [...($('pfGA').checked?['aerial']:[]), ...($('pfGS').checked?['street']:[])];
+      if(!kinds.length){ flash('Tick Aerial and/or Street View'); return; }
+      const list = sorted().filter(s=>!want.length || want.includes(num(s.ref))); if(!list.length){ flash('No properties with those numbers'); return; }
+      const btn = $('pfGGo'), msg = $('pfGMsg'), inc = $('pfGRev').checked; btn.disabled = true; let ok = 0; const fails = [];
+      for(let i=0;i<list.length;i++){ const s = list[i];
+        for(const k of kinds){
+          if(!inc && s.photos[k] && s.photos[k].reviewed) continue;
+          msg.textContent = `Property ${s.ref} (${i+1} of ${list.length})…`;
+          try{ await takeGoogle(s, k); ok++; }catch(x){ fails.push(`${s.ref} ${k==='aerial'?'aerial':'street'}: ${x.message}`); if(/refused/.test(x.message)) break; }
+        }
+        if(fails.length && /refused/.test(fails[fails.length-1])) break;
+      }
+      btn.disabled = false;
+      msg.innerHTML = `${ok} image${ok===1?'':'s'} updated.` + (fails.length ? `<br>Not updated: ${fails.slice(0,8).map(esc).join('<br>')}${fails.length>8?'<br>…':''}` : '');
     };
     $('pfImgImp').onchange = async e=>{
       const files = [...e.target.files]; const msg = $('pfImgMsg'); let ok = 0, skip = [];
