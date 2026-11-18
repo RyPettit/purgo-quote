@@ -864,6 +864,7 @@ $('newJob').onclick = ()=>{
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
   rfRows=[newRf(1)]; renderRf();
   rfChems = null; customNotes = null; loc = null; makeRef(); renderPw(); renderRfChem(); render();
+  if(typeof setQuoteAccount==='function') setQuoteAccount(null);
   if(window.PURGO_MEASURE && typeof MEASURE!=='undefined') MEASURE.restore([]);
 };
 
@@ -927,7 +928,24 @@ const round2 = n => Math.round((+n||0)*100)/100;
   document.addEventListener('visibilitychange', start);
   start();
 })();
-const VIEWS = ['login','quote','quotes','portfolio','portal','admin','measure'];
+const VIEWS = ['login','accounts','quote','quotes','portfolio','portal','admin','measure'];
+// the account the open quote belongs to (set when starting a quote from an account, or by the database on save)
+let quoteAccount = null;
+function setQuoteAccount(id, name, no){
+  quoteAccount = id || null;
+  const el = $('qAcc'); if(!el) return;
+  el.hidden = !id;
+  if(id) el.innerHTML = `Account: <button class="linkbtn" type="button" data-goacc="${esc(id)}">${esc(name||'View account')}${no?` · AC-${no}`:''}</button> <button class="linkbtn" type="button" data-unacc title="Save this quote to whichever account matches the customer details">change</button>`;
+}
+document.addEventListener('click', e=>{
+  const g = e.target.closest('[data-goacc]'); if(g && typeof ACCOUNTS!=='undefined'){ ACCOUNTS.open(g.dataset.goacc); return; }
+  if(e.target.closest('[data-unacc]')){ setQuoteAccount(null); flash('When you save, the quote will join the account matching the customer details'); }
+});
+async function showQuoteAccount(id){
+  if(!id){ setQuoteAccount(null); return; }
+  setQuoteAccount(id);
+  try{ const {data} = await sb.from('accounts').select('id,name,account_no').eq('id', id).maybeSingle(); if(data && quoteAccount===id) setQuoteAccount(data.id, data.name, data.account_no); }catch(e){}
+}
 const isNetErr = e => !navigator.onLine || /fetch|network|Failed to fetch|Load failed/i.test(String(e && (e.message||e)));
 
 function syncEditing(){
@@ -949,6 +967,7 @@ function show(view){
   if(view==='admin') loadStaff();
   if(view==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.onShow();
   if(view==='portal' && typeof PORTAL!=='undefined') PORTAL.onShow();
+  if(view==='accounts' && typeof ACCOUNTS!=='undefined') ACCOUNTS.onShow();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
@@ -1012,6 +1031,7 @@ $('signOut').onclick = async ()=>{
   LS.del('purgoAddr'); LS.del('purgoQuotes'); quotes = []; addresses = []; quotesLoaded = false;
   if(typeof PORTFOLIO!=='undefined') PORTFOLIO.reset();
   if(typeof PORTAL!=='undefined') PORTAL.reset();
+  if(typeof ACCOUNTS!=='undefined') ACCOUNTS.reset();
   $('newJob').click(); $('on-gt').checked = false; $('on-wn').checked = false; $('on-rf').checked = false; $('on-pw').checked = true; syncSvc();
   await sb.auth.signOut().catch(()=>{});
   ME = null; ROLE = null; document.body.classList.remove('is-admin','is-customer');
@@ -1153,15 +1173,17 @@ function buildRecord(o, ref){
     sub:round2(o.sub), vat:round2(o.vat), total:round2(o.total),
     lines:o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:round2(l.amt)}))})),
     state:snapshot(), created_by_name:ME.name};
+  if(quoteAccount) rec.account_id = quoteAccount;
   const addr = {key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:rec.customer, phone:rec.phone, email:rec.email, notes:$('jobNotes').value.trim(), lat:loc?loc.lat:null, lng:loc?loc.lng:null, last_quoted:now};
+  if(quoteAccount) addr.account_id = quoteAccount;
   const costs = ROLE==='admin' ? costRecord(o) : null;
   return {rec, addr, costs};
 }
 function costRecord(o){ return {cost_total:round2(o.costTotal), profit:round2(o.profit), margin:Math.round(o.margin*10)/10, costs:{lines:o.costs.map(([l,v,d])=>({label:l, amt:round2(v), detail:d})), diesel:num('diesel'), petrol:num('petrol'), crew:o.crew, hours:Math.round(o.hours*100)/100}, computed_at:new Date().toISOString()}; }
 async function pushQuote(rec, addr, costs){
-  const {data, error} = await sb.from('quotes').upsert(rec, {onConflict:'ref'}).select('id,quote_no').single();
+  const {data, error} = await sb.from('quotes').upsert(rec, {onConflict:'ref'}).select('id,quote_no,account_id').single();
   if(error) throw error;
-  if(addr.line || addr.postcode) await sb.from('addresses').upsert(addr, {onConflict:'key'});
+  if(addr.line || addr.postcode) await sb.from('addresses').upsert(data.account_id ? Object.assign({}, addr, {account_id:addr.account_id||data.account_id}) : addr, {onConflict:'key'});
   if(costs){ const r = await sb.from('quote_costs').upsert(Object.assign({quote_id:data.id}, costs)); if(r.error) throw r.error; }
   return data;
 }
@@ -1176,6 +1198,7 @@ async function saveQuote(asNew){
     if(!navigator.onLine) throw new Error('offline');
     const saved = await pushQuote(item.rec, item.addr, item.costs);
     editing = {id:saved.id, ref:refStr}; quoteNo = saved.quote_no; pricing.snap = item.rec.state.pricedWith; pricing.current = false; syncEditing(); render();
+    if(saved.account_id && saved.account_id!==quoteAccount) showQuoteAccount(saved.account_id);
     flash(`Saved ${fullRef()}`);
     loadAddresses();
   }catch(e){
@@ -1251,13 +1274,13 @@ document.addEventListener('click', async e=>{
   const b = e.target.closest('[data-openq],[data-openq-local]'); if(!b) return;
   if(b.dataset.openqLocal){
     const it = outbox().find(x=>x.rec.ref===b.dataset.openqLocal); if(!it) return;
-    refStr = it.rec.ref; quoteNo = null; pricing = {status:'draft', snap:it.rec.state.pricedWith||null, current:false}; restore(it.rec.state); editing = null; syncEditing(); show('quote'); return;
+    refStr = it.rec.ref; quoteNo = null; pricing = {status:'draft', snap:it.rec.state.pricedWith||null, current:false}; restore(it.rec.state); editing = null; syncEditing(); showQuoteAccount(it.rec.account_id||null); show('quote'); return;
   }
   b.disabled = true;
-  const {data, error} = await sb.from('quotes').select('id,ref,quote_no,status,state,quote_costs(quote_id)').eq('id', b.dataset.openq).maybeSingle();
+  const {data, error} = await sb.from('quotes').select('id,ref,quote_no,status,state,account_id,quote_costs(quote_id)').eq('id', b.dataset.openq).maybeSingle();
   b.disabled = false;
   if(error || !data){ flash('Could not open: ' + (error ? (isNetErr(error)?'no connection':error.message) : 'quote not found')); return; }
-  refStr = data.ref; quoteNo = data.quote_no; pricing = {status:data.status||'draft', snap:(data.state&&data.state.pricedWith)||null, current:false}; restore(data.state); editing = {id:data.id, ref:data.ref}; syncEditing();
+  refStr = data.ref; quoteNo = data.quote_no; pricing = {status:data.status||'draft', snap:(data.state&&data.state.pricedWith)||null, current:false}; restore(data.state); editing = {id:data.id, ref:data.ref}; syncEditing(); showQuoteAccount(data.account_id);
   show('quote'); flash(`Opened ${fullRef()}`);
   // admin: refresh the profit with today's costs (a locked quote's price doesn't change)
   if(ROLE==='admin' && (isLocked() || !(data.quote_costs && (Array.isArray(data.quote_costs) ? data.quote_costs.length : true)))){

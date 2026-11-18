@@ -13,13 +13,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=b3fbd0829b">
+<link rel="stylesheet" href="purgo.css?v=8df04c8f4d">
 </head>
 <body>
 <header class="topbar">
   <div class="tb-in">
     <a class="brand" href="#quote" aria-label="Purgō Portal"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"><span class="devbadge dev-only">DEV</span></a>
     <nav class="nav" id="nav" hidden>
+      <button type="button" data-view="accounts">Accounts</button>
       <button type="button" data-view="quote">Quote</button>
       <button type="button" data-view="quotes">Saved quotes</button>
       <button type="button" data-view="portfolio">Portfolios</button>
@@ -96,6 +97,7 @@
           <div class="seg" id="ctype"><button type="button" data-v="res" class="on">Residential</button><button type="button" data-v="com">Commercial</button></div>
         </div>
         <div class="svc-body fields">
+          <p class="hint wide qacc" id="qAcc" hidden></p>
           <label class="f wide">Address<input id="addr" autocomplete="off" placeholder="Type a postcode, or a saved customer or address"><div class="sugg" id="addrSugg" hidden></div></label>
           <label class="f">Postcode<input id="pc" autocomplete="off" placeholder="e.g. HU13 0ET"><div class="sugg" id="pcSugg" hidden></div></label>
           <label class="f">Customer / site name<input id="cust"></label>
@@ -282,7 +284,9 @@
   </section>
 </main>
 
-<!-- PORTFOLIOS (filled by portfolio.js?v=d795218442) -->
+<!-- ACCOUNTS (filled by accounts.js?v=71f54bd684) -->
+<main id="view-accounts" class="wrap" hidden></main>
+<!-- PORTFOLIOS (filled by portfolio.js?v=0aa4f8f075) -->
 <main id="view-portfolio" class="wrap" hidden></main>
 <!-- CUSTOMER PORTAL (filled by portal.js?v=4afff4439d) -->
 <main id="view-portal" class="wrap" hidden></main>
@@ -405,9 +409,10 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=908a4fdede"></script>
+<script src="purgo.js?v=1b8b201afc"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
-<script src="portfolio.js?v=d795218442"></script>
+<script src="portfolio.js?v=0aa4f8f075"></script>
+<script src="accounts.js?v=71f54bd684"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

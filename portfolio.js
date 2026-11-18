@@ -1221,6 +1221,6 @@ const PORTFOLIO = (()=>{
     }).filter(r=>r.address);
   }
 
-  return {onShow, render, reset:()=>{ cur = null; sites = {}; list = []; loaded = false; try{ sessionStorage.removeItem('pfCur'); }catch(e){} }};
+  return {onShow, render, open:openPortfolio, reset:()=>{ cur = null; sites = {}; list = []; loaded = false; try{ sessionStorage.removeItem('pfCur'); }catch(e){} }};
 })();
 if(typeof ME!=='undefined' && ME && !document.getElementById('view-portfolio').hidden) PORTFOLIO.onShow();
