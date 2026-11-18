@@ -108,7 +108,7 @@ const PORTFOLIO = (()=>{
     const inc = all.filter(s=>siteData(s).include!==false && s.data.status!=='noquote');
     let sub = 0, m = 0, hrs = 0;
     const priced = inc.filter(s=>{ const c = calc(s); sub += c.price; m += c.m; hrs += c.hrs; return c.price>0; });
-    const rams = st.rams && priced.length ? R.rams : 0;
+    const rams = 0;   // RAMS are included in the prices – no separate charge
     const disc = priced.length>=num(st.discMin) ? sub*num(st.discPct)/100 : 0;
     const net = sub - disc + rams;
     const vat = st.vat ? net*R.vat/100 : 0;
@@ -1033,7 +1033,7 @@ const PORTFOLIO = (()=>{
       </div>
       <div class="checks" style="margin-top:12px">
         <label class="ck"><input type="checkbox" data-s="vat" ${st.vat?'checked':''}>Charge VAT (${R.vat}%)</label>
-        <label class="ck"><input type="checkbox" data-s="rams" ${st.rams?'checked':''}>RAMS charge once (${gbp(R.rams)})</label>
+        <label class="ck"><input type="checkbox" data-s="rams" ${st.rams?'checked':''}>RAMS provided (included in the price – no separate charge)</label>
         <label class="ck"><input type="checkbox" data-s="condHeavy" ${st.condHeavy!==false?'checked':''}>Heavy / vegetation adds blockage time (+${R.cx_gtHeavy}h)</label>
       </div>
       <p class="hint">Gutter £/m, minimum, set-up, guard price, labour rate and access hours all come from the shared price list (Admin). Change them there and every portfolio updates.</p>
