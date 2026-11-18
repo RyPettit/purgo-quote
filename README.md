@@ -18,6 +18,8 @@ change prices.
 | File | What it is |
 |---|---|
 | `index.html`, `purgo.css`, `purgo.js` | The app |
+| `accounts.js` | Accounts (CRM): customer details, contacts, properties, quotes, invoices (next) and communication log |
+| `supabase/accounts.sql` | Accounts tables, auto-linking of quotes to accounts, merge function. Safe to re-run. |
 | `config.js` | Live and dev Supabase details; the web address decides which is used |
 | `supabase/schema.sql` | Tables, access rules and starting prices. Safe to re-run. |
 | `supabase/make-admin.sql` | Makes your account the admin |

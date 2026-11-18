@@ -1,8 +1,8 @@
 // Purgō Portal service worker: lets the app open and quote with no signal.
 // Network first, cache as fallback, so a new release is picked up straight away
 // and the last good copy is used when there is no signal.
-const VERSION = 'purgo-dbb84b9b1f';
-const SHELL = ['./', 'index.html', 'purgo.css?v=b3fbd0829b', 'purgo.js?v=908a4fdede', 'measure.js?v=f88bc2a42d', 'portfolio.js?v=d795218442', 'portal.js?v=4afff4439d', 'config.js', 'vendor/supabase-2.117.3.js',
+const VERSION = 'purgo-87ad19d3ca';
+const SHELL = ['./', 'index.html', 'purgo.css?v=6fbeb82c0b', 'purgo.js?v=49818a44de', 'measure.js?v=f88bc2a42d', 'portfolio.js?v=0aa4f8f075', 'portal.js?v=4afff4439d', 'accounts.js?v=ef78066c0b', 'config.js', 'vendor/supabase-2.117.3.js',
   'postcodes.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png',
   'icons/apple-touch-icon.png', 'fonts/plus-jakarta-sans.woff2', 'brand/emblem-light.png', 'brand/wordmark-light.png',
   'brand/logo-navy.png', 'brand/logo-light.png'];
