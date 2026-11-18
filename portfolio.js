@@ -60,14 +60,28 @@ const PORTFOLIO = (()=>{
     return d;
   }
   const totalLen = d => ['front','rear','left','right','other'].reduce((a,k)=>a+num(d.len&&d.len[k]),0);
-  const sorted = () => Object.values(sites).sort((a,b)=>num(a.ref)-num(b.ref) || String(a.name||a.address).localeCompare(b.name||b.address));
+  // Subsections: a property can be split into buildings (e.g. a whole street). Each subsection is an ordinary
+  // property row with data.parentId → the group and data.sub → its number (shown as 9.1, 9.2 …).
+  // The group itself is not priced; its subsections are.
+  const parentOf = s => s && s.data && s.data.parentId ? sites[s.data.parentId] || null : null;
+  const kids = g => Object.values(sites).filter(x=>x.data && x.data.parentId===g.id).sort((a,b)=>num(a.data.sub)-num(b.data.sub));
+  const isGroup = s => !!s && Object.values(sites).some(x=>x.data && x.data.parentId===s.id);
+  const refOf = s => { const p = parentOf(s); return p ? `${p.ref}.${s.data.sub}` : String(s.ref ?? ''); };
+  const incl = s => !isGroup(s) && s.data.include!==false && s.data.status!=='noquote' && (!parentOf(s) || (parentOf(s).data.include!==false && parentOf(s).data.status!=='noquote'));
+  const byName = (a,b) => num(a.ref)-num(b.ref) || String(a.name||a.address).localeCompare(b.name||b.address);
+  const sorted = () => { const all = Object.values(sites), out = [];
+    all.filter(x=>!parentOf(x)).sort(byName).forEach(t=>{ out.push(t); kids(t).forEach(k=>out.push(k)); });
+    return out; };
   const imgs = s => [s.photos.aerial, s.photos.street, ...(s.photos.site||[])].filter(Boolean);
   const allFiles = s => [...imgs(s), ...(s.photos.job||[]), ...(s.photos.files||[])];
   const jobOf = k => JOB_ST.find(x=>x[0]===(k||'')) || JOB_ST[0];
-  const inJob = s => s.data.include!==false && s.data.status!=='noquote' && (s.data.job&&s.data.job.status)!=='na';
+  const inJob = s => incl(s) && (s.data.job&&s.data.job.status)!=='na';
   const imgStats = s => { const a = imgs(s); return {total:a.length, done:a.filter(x=>x.reviewed).length}; };
 
+  // a group's figures = the sum of its included subsections
+  function groupCalc(g){ const r = {m:0, price:0, hrs:0, n:0}; kids(g).filter(incl).forEach(k=>{ const c = calc(k); r.m += c.m; r.price += c.price; r.hrs += c.hrs; if(c.price>0) r.n++; }); return r; }
   function calc(s){
+    if(isGroup(s)){ const g = groupCalc(s); return {m:g.m, rate:0, lines:[], price:0, hrs:0, group:g, needsVisit:false}; }
     const d = siteData(s), st = S(), L = R.labour, crew = Math.max(1, Math.round(num(st.crew))||2);
     const m = totalLen(d), storeys = num(d.storeys);
     const rate = storeys>=3 ? R.gutRate3 : R.gutRate;
@@ -98,6 +112,7 @@ const PORTFOLIO = (()=>{
   }
   function issues(s){
     const d = siteData(s), a = [];
+    if(isGroup(s)) return a;
     if(!d.type) a.push('type'); if(!num(d.storeys)) a.push('storeys'); if(!totalLen(d)) a.push('gutter length'); if(!d.method) a.push('method');
     if(!s.photos.aerial) a.push('aerial'); if(!s.photos.street) a.push('street view');
     const r = imgStats(s); if(r.total>r.done) a.push(`${r.total-r.done} to review`);
@@ -105,7 +120,8 @@ const PORTFOLIO = (()=>{
   }
   function portfolioTotals(){
     const st = S(), all = sorted();
-    const inc = all.filter(s=>siteData(s).include!==false && s.data.status!=='noquote');
+    all.forEach(siteData);
+    const inc = all.filter(incl);
     let sub = 0, m = 0, hrs = 0;
     const priced = inc.filter(s=>{ const c = calc(s); sub += c.price; m += c.m; hrs += c.hrs; return c.price>0; });
     const rams = 0;   // RAMS are included in the prices – no separate charge
@@ -207,7 +223,7 @@ const PORTFOLIO = (()=>{
     if(urlsAt && Date.now()-urlsAt > 5*3600e3){ urlsAt = Date.now(); signAll(true).then(()=>render()); }
     const P = portfolioTotals();
     root().innerHTML = `
-    <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.length} properties · <span id="pfSave">All changes saved</span></p></div>
+    <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.filter(x=>!isGroup(x)).length} properties · <span id="pfSave">All changes saved</span></p></div>
       <div class="vb-actions"><div class="seg" id="pfTabs">${[['summary','Summary'],['site','Properties'],['map','Map & routes'],['quote','Customer quote'],['customer','Customer access'],['settings','Settings & import']].map(([k,l])=>`<button type="button" data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div></div></div>
     <div id="pfBody"></div>`;
     $('pfBack').onclick = e=>{ e.preventDefault(); try{ sessionStorage.removeItem('pfCur'); }catch(x){} loadList().then(renderList); };
@@ -223,12 +239,12 @@ const PORTFOLIO = (()=>{
     const counts = {}; STATUSES.forEach(s=>counts[s[0]]=0); all.forEach(s=>counts[s.data.status]=(counts[s.data.status]||0)+1);
     const rev = all.reduce((a,s)=>{ const r = imgStats(s); a.d += r.done; a.t += r.total; return a; }, {d:0,t:0});
     let rows = all.filter(s=>(!filterStatus || s.data.status===filterStatus) && (!search || [s.name,s.address,s.postcode,s.data.type,s.data.notes].join(' ').toLowerCase().includes(search.toLowerCase())));
-    const key = {ref:s=>num(s.ref), name:s=>(s.name||s.address||'').toLowerCase(), type:s=>s.data.type||'', storeys:s=>num(s.data.storeys), len:s=>totalLen(s.data), status:s=>STATUSES.findIndex(x=>x[0]===s.data.status), job:s=>JOB_ST.findIndex(x=>x[0]===s.data.job.status)+(s.data.job.done||s.data.job.booked||''), price:s=>calc(s).price, hrs:s=>calc(s).hrs};
-    if(key[sortKey]) rows.sort((a,b)=>{ const x = key[sortKey](a), y = key[sortKey](b); return (x>y?1:x<y?-1:0)*sortDir; });
+    const key = {ref:s=>num(s.ref)+(parentOf(s)?num(s.data.sub)/1000:0), name:s=>(s.name||s.address||'').toLowerCase(), type:s=>s.data.type||'', storeys:s=>num(s.data.storeys), len:s=>totalLen(s.data), status:s=>STATUSES.findIndex(x=>x[0]===s.data.status), job:s=>JOB_ST.findIndex(x=>x[0]===s.data.job.status)+(s.data.job.done||s.data.job.booked||''), price:s=>calc(s).price, hrs:s=>calc(s).hrs};
+    if(key[sortKey] && !(sortKey==='ref' && sortDir===1)) rows.sort((a,b)=>{ const x = key[sortKey](a), y = key[sortKey](b); return (x>y?1:x<y?-1:0)*sortDir; });   // # ascending keeps subsections under their group
     const th = (k,l,c='') => `<th class="${c}" ${k?`data-sort="${k}"`:''}>${l}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`;
     box.innerHTML = `
     <div class="pf-stats">
-      <div class="stat"><span>Properties</span><b>${all.length} <small>${P.inc.length} in quote</small></b></div>
+      <div class="stat"><span>Properties</span><b>${all.filter(x=>!isGroup(x)).length} <small>${P.inc.length} in quote</small></b></div>
       <div class="stat"><span>Ready to quote</span><b>${counts.ready||0}</b></div>
       <div class="stat"><span>Site visits needed</span><b>${counts.visit||0}</b></div>
       <div class="stat"><span>Images reviewed</span><b>${rev.d} <small>of ${rev.t}</small></b></div>
@@ -248,10 +264,16 @@ const PORTFOLIO = (()=>{
       <div class="pf-tbl"><table>
         <thead><tr>${th('ref','#')}<th></th>${th('name','Property')}${th('type','Type')}${th('storeys','Storeys','r')}${th('len','Gutter m','r')}<th class="r">Downpipes</th><th>Access</th><th>Method</th><th>Condition</th>${th('status','Survey')}${th('job','Job')}<th>Missing</th>${th('hrs','Hours','r')}${th('price','Price','r')}</tr></thead>
         <tbody>${rows.map(s=>{ const d = s.data, c = calc(s), st = statusOf(d.status), iss = issues(s), acc = ACCESS.filter(a=>d.access[a[0]]), im = s.photos.aerial || s.photos.street || s.photos.site[0], cond = CONDITIONS.find(x=>x[0]===d.condition);
-          return `<tr data-id="${s.id}" class="${d.include===false||d.status==='noquote'?'off':''}">
-          <td class="r">${esc(s.ref)}</td>
+          if(c.group){ const k = kids(s); return `<tr data-id="${s.id}" class="pf-grp ${d.include===false||d.status==='noquote'?'off':''}">
+            <td class="r">${esc(s.ref)}</td><td>${im&&src(im)?`<img class="pf-th" src="${esc(src(im))}" alt="" loading="lazy">`:'<div class="pf-th"></div>'}</td>
+            <td><b>${esc(s.name||s.address)}</b><small>${k.length} subsection${k.length===1?'':'s'}${s.name?' · '+esc(s.address):''}</small></td>
+            <td>Group</td><td></td><td class="r"><b>${c.group.m?c.group.m.toFixed(0):'–'}</b></td><td></td><td><div class="pf-badges">${acc.map(a=>`<span class="pf-b warn">${esc(a[1].split(' –')[0].split(' /')[0].split(' (')[0])}</span>`).join('')}</div></td><td></td><td></td>
+            <td><span class="pf-st"><i style="background:${st[2]}"></i>${st[1]}</span></td><td></td><td><small>${k.filter(x=>issues(x).length).length} need info</small></td>
+            <td class="r">${c.group.hrs?c.group.hrs.toFixed(1):'–'}</td><td class="r"><b>${c.group.price?gbp0(c.group.price):'–'}</b><small>subtotal</small></td></tr>`; }
+          return `<tr data-id="${s.id}" class="${!incl(s)?'off':''} ${parentOf(s)?'pf-sub':''}">
+          <td class="r">${esc(refOf(s))}</td>
           <td>${im&&src(im)?`<img class="pf-th" src="${esc(src(im))}" alt="" loading="lazy">`:'<div class="pf-th"></div>'}</td>
-          <td><b>${esc(s.name||s.address)}</b>${s.name?`<small>${esc(s.address)}</small>`:''}<small>${esc(s.postcode||'')}${d.units?' · '+esc(d.units)+' units':''}</small></td>
+          <td><b>${esc(s.name||s.address)}</b>${s.name&&s.name!==s.address?`<small>${esc(s.address)}</small>`:''}<small>${esc(s.postcode||'')}${d.units?' · '+esc(d.units)+' units':''}</small></td>
           <td>${esc(d.type)||'–'}${d.gutterType?`<small>${esc(d.gutterType)}</small>`:''}</td>
           <td class="r">${esc(d.storeys)||'–'}</td><td class="r"><b>${c.m?c.m.toFixed(0):'–'}</b></td><td class="r">${esc(d.downpipes)||'–'}</td>
           <td><div class="pf-badges">${acc.length?acc.map(a=>`<span class="pf-b ${a[0]==='mewp'||a[0]==='tower'?'bad':'warn'}">${esc(a[1].split(' –')[0].split(' /')[0].split(' (')[0])}</span>`).join(''):'<span class="pf-b ok">None noted</span>'}</div>${d.accessNotes?`<small>${esc(d.accessNotes.slice(0,70))}</small>`:''}</td>
@@ -260,7 +282,7 @@ const PORTFOLIO = (()=>{
           <td><span class="pf-st"><i style="background:${jobOf(d.job.status)[2]}"></i>${jobOf(d.job.status)[1]}</span>${d.job.status==='done'&&d.job.done?`<small>${fmtD(d.job.done)}</small>`:d.job.status==='booked'&&d.job.booked?`<small>${fmtD(d.job.booked)}</small>`:''}${s.photos.job.length?`<small>${s.photos.job.length} photo${s.photos.job.length>1?'s':''} · ${s.photos.job.filter(p=>p.share).length} shared</small>`:''}</td>
           <td><div class="pf-badges">${iss.length?iss.map(i=>`<span class="pf-b">${esc(i)}</span>`).join(''):'<span class="pf-b ok">Complete</span>'}</div></td>
           <td class="r">${c.hrs?c.hrs.toFixed(1):'–'}</td><td class="r"><b>${c.price?gbp0(c.price):'–'}</b></td></tr>`; }).join('')}</tbody>
-        <tfoot><tr><td></td><td></td><td>${rows.length} shown</td><td></td><td></td><td class="r">${Math.round(rows.reduce((a,s)=>a+totalLen(s.data),0))}</td><td class="r">${rows.reduce((a,s)=>a+num(s.data.downpipes),0)}</td><td colspan="6"></td><td class="r">${rows.reduce((a,s)=>a+calc(s).hrs,0).toFixed(1)}</td><td class="r">${gbp0(rows.filter(s=>s.data.include!==false&&s.data.status!=='noquote').reduce((a,s)=>a+calc(s).price,0))}</td></tr></tfoot>
+        <tfoot><tr><td></td><td></td><td>${rows.length} shown</td><td></td><td></td><td class="r">${Math.round(rows.filter(x=>!isGroup(x)).reduce((a,s)=>a+totalLen(s.data),0))}</td><td class="r">${rows.reduce((a,s)=>a+num(s.data.downpipes),0)}</td><td colspan="6"></td><td class="r">${rows.reduce((a,s)=>a+calc(s).hrs,0).toFixed(1)}</td><td class="r">${gbp0(rows.filter(incl).reduce((a,s)=>a+calc(s).price,0))}</td></tr></tfoot>
       </table></div>
     </section>`;
     $('pfQ').oninput = e=>{ search = e.target.value; const p = e.target.selectionStart; renderSummary(box, P); const q = $('pfQ'); q.focus(); q.setSelectionRange(p,p); };
@@ -271,14 +293,14 @@ const PORTFOLIO = (()=>{
     $('pfCsv').onclick = copyCsv;
   }
   async function addSite(){
-    const ref = Math.max(0, ...Object.values(sites).map(s=>num(s.ref))) + 1;
+    const ref = Math.max(0, ...Object.values(sites).filter(x=>!parentOf(x)).map(s=>num(s.ref))) + 1;
     const {data, error} = await sb.from('portfolio_sites').insert({portfolio_id:cur.id, ref, name:'', address:'', data:{status:'todo'}, updated_by_name:ME.name}).select('*').single();
     if(error){ flash('Could not add: ' + error.message); return; }
     siteData(data); sites[data.id] = data; siteId = data.id; tab = 'site'; render();
   }
   async function copyCsv(){
     const head = ['Ref','Site','Address','Postcode','Units','Type','Storeys','Total gutter m','Gutter type','Downpipes','Guards','Condition','Method','Access','Access notes','Status','Customer notes','Hours','Price'];
-    const rows = sorted().map(s=>{ const d = s.data, c = calc(s); return [s.ref, s.name, s.address, s.postcode, d.units, d.type, d.storeys, c.m.toFixed(1), d.gutterType, d.downpipes, d.guards, d.condition, d.method, ACCESS.filter(a=>d.access[a[0]]).map(a=>a[1]).join('; '), d.accessNotes, statusOf(d.status)[1], d.notes, c.hrs.toFixed(1), c.price.toFixed(2)].map(v=>String(v??'').replace(/[\t\n]/g,' ')).join('\t'); });
+    const rows = sorted().filter(x=>!isGroup(x)).map(s=>{ const d = s.data, c = calc(s); return [refOf(s), s.name, s.address, s.postcode, d.units, d.type, d.storeys, c.m.toFixed(1), d.gutterType, d.downpipes, d.guards, d.condition, d.method, ACCESS.filter(a=>d.access[a[0]]).map(a=>a[1]).join('; '), d.accessNotes, statusOf(d.status)[1], d.notes, c.hrs.toFixed(1), c.price.toFixed(2)].map(v=>String(v??'').replace(/[\t\n]/g,' ')).join('\t'); });
     try{ await navigator.clipboard.writeText([head.join('\t'), ...rows].join('\n')); flash('Copied – paste into Excel or Google Sheets'); }catch(e){ flash('Copy was blocked by the browser'); }
   }
 
@@ -306,8 +328,8 @@ const PORTFOLIO = (()=>{
       </div>`;
     box.innerHTML = `
     <div class="pf-head">
-      <div style="flex:1;min-width:240px"><p class="hint" style="margin:0">PROPERTY ${esc(s.ref)} OF ${all.length}</p><h2 class="vtitle" style="font-size:1.4rem">${esc(s.name||s.address||'New property')}</h2><p class="sub">${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</p></div>
-      <div class="pf-pager"><select id="pfJump">${all.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.ref)}. ${esc((x.name||x.address||'').slice(0,40))}</option>`).join('')}</select>
+      <div style="flex:1;min-width:240px"><p class="hint" style="margin:0">${parentOf(s) ? `<a href="#" data-go="${parentOf(s).id}">${esc(parentOf(s).ref)}. ${esc(parentOf(s).name||parentOf(s).address)}</a> › SUBSECTION ${esc(refOf(s))}` : isGroup(s) ? `PROPERTY ${esc(s.ref)} · GROUP OF ${kids(s).length}` : `PROPERTY ${esc(s.ref)} OF ${all.filter(x=>!parentOf(x)).length}`}</p><h2 class="vtitle" style="font-size:1.4rem">${esc(s.name||s.address||'New property')}</h2><p class="sub">${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</p></div>
+      <div class="pf-pager"><select id="pfJump">${all.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${parentOf(x)?'\u00a0\u00a0\u00a0':''}${esc(refOf(x))}. ${esc((x.name||x.address||'').slice(0,40))}</option>`).join('')}</select>
         <button class="btn" type="button" id="pfPrev" ${prev?'':'disabled'}>← Prev</button><button class="btn" type="button" id="pfNext" ${next?'':'disabled'}>Next →</button></div>
     </div>
     <div class="pf-grid">
@@ -316,13 +338,13 @@ const PORTFOLIO = (()=>{
           <label class="f wide">Site name<input data-c="name" value="${esc(s.name)}"></label>
           <label class="f wide">Address<input data-c="address" value="${esc(s.address)}"></label>
           <label class="f">Postcode<input data-c="postcode" value="${esc(s.postcode)}"></label>
-          <label class="f">Ref #<input type="number" data-c="ref" value="${esc(s.ref)}"></label>
+          ${parentOf(s) ? `<label class="f">Subsection #<input type="number" min="1" data-k="sub" value="${esc(d.sub)}"></label>` : `<label class="f">Ref #<input type="number" data-c="ref" value="${esc(s.ref)}"></label>`}
           <label class="f">Property type<select data-k="type">${opt(TYPES, d.type)}</select></label>
           <label class="f">Flats / units<input type="number" data-k="units" value="${esc(d.units)}"></label>
           <label class="f">Storeys (to gutter)<input type="number" min="1" data-k="storeys" value="${esc(d.storeys)}"></label>
           <label class="f">Survey status<select data-k="status">${opt(STATUSES.map(x=>[x[0],x[1]]), d.status, '–')}</select></label>
         </div></section>
-        <section class="card"><h3 style="margin-top:0">Gutters</h3>
+        <section class="card pf-ng"><h3 style="margin-top:0">Gutters</h3>
           <label class="f">Gutter length by elevation (m)</label>
           <div class="pf-lens">${['front','rear','left','right','other'].map(k=>`<input type="number" step="0.5" min="0" data-len="${k}" value="${esc(d.len[k])}" placeholder="${k[0].toUpperCase()+k.slice(1)}" title="${k}">`).join('')}</div>
           <div class="pf-lenbar"><span class="pf-tot" id="pfTot">Total ${c.m.toFixed(1)} m</span>${window.PURGO_MEASURE?`<button class="btn sm" type="button" id="pfMeasure">Measure on map</button>`:''}<span class="hint" style="margin:0">or measure the roofline in <a href="${L.earth}" target="_blank" rel="noopener">Google Earth</a></span></div>
@@ -351,7 +373,7 @@ const PORTFOLIO = (()=>{
             <label class="f">Reason<input data-k="adjustReason" value="${esc(d.adjustReason)}"></label>
           </div>
           <label class="ck" style="margin-top:10px"><input type="checkbox" data-k="include" ${d.include!==false?'checked':''}>Include this property in the customer quote</label>
-          ${ROLE==='admin'?`<div style="margin-top:14px;text-align:right"><button class="btn sm" type="button" id="pfDelSite" style="color:var(--bad)">Delete property</button></div>`:''}
+          ${ROLE==='admin'?`<div style="margin-top:14px;text-align:right"><button class="btn sm" type="button" id="pfDelSite" style="color:var(--bad)">${parentOf(s)?'Delete subsection':'Delete property'}</button></div>`:''}
         </section>
       </div>
       <div class="col">
@@ -375,8 +397,74 @@ const PORTFOLIO = (()=>{
     </div>
     <div class="pf-lb" id="pfLb" hidden><img alt=""></div>
     <input type="file" id="pfFile" accept="image/*" multiple hidden>`;
+    // groups: no gutters/price/job of their own – those live on the subsections
+    const cols = box.querySelectorAll('.pf-grid > .col');
+    if(isGroup(s)){ box.querySelectorAll('.pf-ng, .pf-job, #pfPrice').forEach(e=>e.remove()); cols[1].insertAdjacentHTML('afterbegin', subCard(s)); }
+    else cols[0].insertAdjacentHTML('beforeend', subCard(s));
     bindSite(s);
+    bindSubs(s);
     liveViews(s);
+  }
+  /* ---------- subsections ---------- */
+  function subForm(g){
+    return `<div class="fields one" style="margin-top:10px"><label class="f">Address of the building<input id="pfSubAddr" value="${esc(g.address||'')}" placeholder="e.g. 3 Ella Park, Anlaby"></label></div>
+      <div class="fields" style="margin-top:8px"><label class="f">Property type<select id="pfSubType">${opt(TYPES, '')}</select></label></div>
+      <div class="pf-tools" style="margin-top:8px"><span class="hint" style="flex:1;margin:0">One per building – a block of flats is one subsection, each house is one.</span><button class="btn pri" type="button" id="pfSubAdd">Add subsection</button></div>
+      <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Add several at once</summary>
+        <label class="f" style="margin-top:8px">One address per line<textarea id="pfSubMany" rows="4" placeholder="3 Ella Park, Anlaby\n5 Ella Park, Anlaby\n7–13 Ella Park (flats), Anlaby"></textarea></label>
+        <div class="pf-tools" style="margin-top:8px"><span style="flex:1"></span><button class="btn" type="button" id="pfSubAddMany">Add these</button></div></details>`;
+  }
+  function subCard(s){
+    const p = parentOf(s);
+    if(p) return `<section class="card pf-subcard"><h3 style="margin-top:0">Part of ${esc(p.ref)}. ${esc(p.name||p.address)}</h3>
+      <p class="hint" style="margin:0">Subsection ${esc(refOf(s))} of ${kids(p).length}. <a href="#" data-go="${p.id}">See all subsections</a></p>
+      <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Add another subsection to ${esc(p.name||p.address)}</summary>${subForm(p)}</details></section>`;
+    const k = kids(s);
+    if(!k.length) return `<section class="card pf-subcard"><h3 style="margin-top:0">Subsections</h3>
+      <p class="hint" style="margin:0">If this address covers several buildings – a whole street or estate, a mix of houses and flats – split it into subsections. Each gets its own type, gutters, photos, job and price, grouped under this property.</p>
+      <details style="margin-top:8px"><summary class="btn sm" style="display:inline-block">Add subsection</summary>${subForm(s)}</details></section>`;
+    const g = groupCalc(s);
+    return `<section class="card pf-subcard"><div class="pf-maphead"><h3 style="margin:0">Subsections (${k.length})</h3><span class="hint" style="margin:0">Subtotal <b>${g.price?gbp(g.price):'–'}</b>${S().vat?' ex VAT':''} · ${g.m.toFixed(0)} m</span></div>
+      <div class="pf-subs">${k.map(x=>{ const c = calc(x), st = statusOf(x.data.status); return `<a href="#" class="pf-subrow ${incl(x)?'':'off'}" data-go="${x.id}"><span class="pf-sn">${esc(x.data.sub)}</span><span class="t"><b>${esc(x.name||x.address)}</b><small>${esc(x.data.type||'Type not set')}${x.data.storeys?' · '+esc(x.data.storeys)+' storey':''} · <i class="dot" style="background:${st[2]}"></i>${st[1]}</small></span><span class="r">${c.m?c.m.toFixed(0)+' m':'–'}<b>${c.price?gbp0(c.price):'–'}</b></span></a>`; }).join('')}</div>
+      <p class="hint" style="margin:8px 0 0">The group itself isn't priced – each subsection is, and they appear together under ${esc(s.name||s.address)} on the quote. Access notes and photos here apply to the whole group.</p>
+      <details style="margin-top:8px"><summary class="btn sm" style="display:inline-block">Add subsection</summary>${subForm(s)}</details></section>`;
+  }
+  async function addSubs(g, rows){
+    rows = rows.filter(r=>r.address); if(!rows.length){ flash('Enter the address of the building'); return []; }
+    let n = Math.max(0, ...kids(g).map(k=>num(k.data.sub)));
+    const ins = rows.map(r=>({portfolio_id:cur.id, ref:num(g.ref), name:r.address, address:r.address, postcode:g.postcode, lat:g.lat, lng:g.lng,
+      data:{status:'todo', parentId:g.id, sub:++n, type:r.type||'', include:true, flush:true, condition:'unknown'}, updated_by_name:ME.name}));
+    const {data, error} = await sb.from('portfolio_sites').insert(ins).select('*');
+    if(error){ flash('Could not add: ' + error.message); return []; }
+    data.forEach(x=>{ siteData(x); sites[x.id] = x; });
+    locateSubs(data, g);
+    return data;
+  }
+  // put each new building on the map by its own address (only a precise match close to the group)
+  async function locateSubs(list, g){
+    try{ await MEASURE.loadGoogle(); const geo = new google.maps.Geocoder();
+      for(const s of list){
+        try{ const {results} = await geo.geocode({address:[s.address, s.postcode].filter(Boolean).join(', '), region:'gb'});
+          const r = (results||[]).find(x=>x.geometry.location_type==='ROOFTOP' || x.types.some(t=>['premise','subpremise','street_address'].includes(t)));
+          if(!r) continue; const l = r.geometry.location, pos = {lat:l.lat(), lng:l.lng()};
+          if(g.lat && g.lng && hav({lat:+g.lat, lng:+g.lng}, pos) > 1.5) continue;
+          s.lat = +pos.lat.toFixed(6); s.lng = +pos.lng.toFixed(6); saveSite(s, 0);
+        }catch(e){}
+      }
+    }catch(e){}
+  }
+  function bindSubs(s){
+    const b = root(), g = parentOf(s) || s;
+    b.querySelectorAll('[data-go]').forEach(a=> a.onclick = e=>{ e.preventDefault(); siteId = a.dataset.go; render(); window.scrollTo(0,0); });
+    const one = $('pfSubAdd'); if(one) one.onclick = async ()=>{
+      one.disabled = true; const made = await addSubs(g, [{address:$('pfSubAddr').value.trim(), type:$('pfSubType').value}]); one.disabled = false;
+      if(made.length){ siteId = made[0].id; render(); window.scrollTo(0,0); flash(`Subsection ${refOf(made[0])} added`); }
+    };
+    const many = $('pfSubAddMany'); if(many) many.onclick = async ()=>{
+      const rows = $('pfSubMany').value.split('\n').map(x=>({address:x.trim()})).filter(x=>x.address);
+      many.disabled = true; const made = await addSubs(g, rows); many.disabled = false;
+      if(made.length){ siteId = g.id; render(); flash(`${made.length} subsection${made.length>1?'s':''} added`); }
+    };
   }
   function shareBtn(img, attr){ return `<button type="button" class="pf-rev pf-share ${img.share?'on':''}" ${attr} title="${img.share ? 'The customer can see this' + (img.sharedBy?' (ticked by '+esc(img.sharedBy)+')':'') + ' – click to hide it' : 'Hidden from the customer – click to let them see it'}"><span class="bx"></span>${img.share ? 'Customer can see' : 'Show customer'}</button>`; }
   function fileRow(f, attr, rmAttr){ return `<div class="pf-file"><span class="pf-fi">${/\.pdf$/i.test(f.path||'')?'PDF':'IMG'}</span><a href="${esc(src(f))}" target="_blank" rel="noopener">${esc(f.name||'File')}</a><small>${fmtD(f.added)}${f.addedBy?' · '+esc(f.addedBy):''}</small>${shareBtn(f, attr)}<button type="button" class="pf-rm" ${rmAttr} title="Remove file">×</button></div>`; }
@@ -419,7 +507,7 @@ const PORTFOLIO = (()=>{
     $('pfPrev').onclick = ()=> all[i-1] && go(all[i-1].id);
     $('pfNext').onclick = ()=> all[i+1] && go(all[i+1].id);
     const b = root();
-    b.querySelectorAll('[data-c]').forEach(e=> e.addEventListener('input', ()=>{ const k = e.dataset.c; s[k] = k==='ref' ? num(e.value) : e.value; saveSite(s); }));
+    b.querySelectorAll('[data-c]').forEach(e=> e.addEventListener('input', ()=>{ const k = e.dataset.c; s[k] = k==='ref' ? num(e.value) : e.value; saveSite(s); if(k==='ref') kids(s).forEach(x=>{ x.ref = s.ref; saveSite(x); }); }));
     b.querySelectorAll('[data-k]').forEach(e=>{
       const ev = (e.tagName==='SELECT' || e.type==='checkbox') ? 'change' : 'input';
       e.addEventListener(ev, ()=>{ s.data[e.dataset.k] = e.type==='checkbox' ? e.checked : e.value; saveSite(s, ev==='change'?0:700); refresh(s); });
@@ -463,11 +551,12 @@ const PORTFOLIO = (()=>{
       el.addEventListener('drop', e=>{ e.preventDefault(); el.classList.remove('drag'); const f = [...e.dataTransfer.files].filter(x=>x.type.startsWith('image/')); if(f.length) addImages(s, el.dataset.slot, f); });
     });
     const del = $('pfDelSite'); if(del) del.onclick = async ()=>{
-      if(!confirmInline('pfDel'+s.id, 'Press Delete property again to remove it and its photos.')) return;
-      const paths = allFiles(s).map(x=>x.path).filter(Boolean);
-      const {error} = await sb.from('portfolio_sites').delete().eq('id', s.id); if(error){ flash('Could not delete: ' + error.message); return; }
+      const k = kids(s), p = parentOf(s);
+      if(!confirmInline('pfDel'+s.id, k.length ? `Press Delete property again to remove it, its ${k.length} subsections and all their photos.` : p ? 'Press Delete again to remove this subsection and its photos.' : 'Press Delete property again to remove it and its photos.')) return;
+      const gone = [s, ...k], paths = gone.flatMap(x=>allFiles(x).map(f=>f.path)).filter(Boolean);
+      const {error} = await sb.from('portfolio_sites').delete().in('id', gone.map(x=>x.id)); if(error){ flash('Could not delete: ' + error.message); return; }
       if(paths.length) sb.storage.from(BUCKET).remove(paths).catch(()=>{});
-      delete sites[s.id]; siteId = null; tab = 'summary'; render(); flash('Property deleted');
+      gone.forEach(x=>{ delete sites[x.id]; }); siteId = p ? p.id : null; tab = p ? 'site' : 'summary'; render(); flash(p ? 'Subsection deleted' : 'Property deleted');
     };
     const pin = $('pfPin'); if(pin) pin.onclick = ()=>{ if(!live.map){ flash('The map has not loaded'); return; } const c = live.map.getCenter(); s.lat = +c.lat().toFixed(6); s.lng = +c.lng().toFixed(6); saveSite(s, 0); flash('Building pinned'); liveViews(s); };
     const ms = $('pfMeasure'); if(ms) ms.onclick = ()=>{
@@ -672,7 +761,7 @@ const PORTFOLIO = (()=>{
   const hm = h => { const m = Math.round(h*60); return m<60 ? `${m} min` : `${Math.floor(m/60)} h ${String(m%60).padStart(2,'0')}`; };
 
   function renderMap(box){
-    const st = ST(), all = sorted(), P = plans();
+    const st = ST(), all = sorted().filter(x=>!isGroup(x)), P = plans();
     P.forEach(x=>{ x.stops = (x.stops||[]).filter(id=>sites[id]); });
     if(!MV.plan || !planOf(MV.plan)) MV.plan = P[0] ? P[0].id : null;
     const p = planOf(MV.plan), noLL = all.filter(s=>!ll(s));
@@ -708,7 +797,7 @@ const PORTFOLIO = (()=>{
             <div><b>${hm(rs.drive)}</b><span>Driving approx.</span></div><div><b>${rs.work ? hm(rs.work) : '–'}</b><span>On site</span></div>
           </div>
           ${rs.work ? `<p class="hint" style="margin:6px 0 0">About ${hm(rs.total)} in total – ${rs.total > R.dayHours ? `<b style="color:var(--warn)">over a ${R.dayHours} h day</b>` : `fits a ${R.dayHours} h day`}. On-site time comes from each property's survey.</p>` : `<p class="hint" style="margin:6px 0 0">On-site time appears once properties have gutter lengths.</p>`}
-          <ol class="pf-stops">${p.stops.map((id,i)=>{ const s = sites[id]; if(!s) return ''; return `<li><span class="pf-sn">${i+1}</span><div><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><small>${esc(s.postcode||'')}${s.data.keyholder?' · '+esc(s.data.keyholder):''}</small></div><span class="pf-sbtn"><button type="button" data-up="${i}" ${i?'':'disabled'} title="Move up">↑</button><button type="button" data-down="${i}" ${i<p.stops.length-1?'':'disabled'} title="Move down">↓</button><button type="button" data-open="${id}" title="Open property">↗</button><button type="button" data-out="${i}" title="Take out of route">×</button></span></li>`; }).join('') || '<p class="hint">Click pins on the map to add properties.</p>'}</ol>
+          <ol class="pf-stops">${p.stops.map((id,i)=>{ const s = sites[id]; if(!s) return ''; return `<li><span class="pf-sn">${i+1}</span><div><b>${esc(refOf(s))}. ${esc(s.name||s.address)}</b><small>${esc(s.postcode||'')}${s.data.keyholder?' · '+esc(s.data.keyholder):''}</small></div><span class="pf-sbtn"><button type="button" data-up="${i}" ${i?'':'disabled'} title="Move up">↑</button><button type="button" data-down="${i}" ${i<p.stops.length-1?'':'disabled'} title="Move down">↓</button><button type="button" data-open="${id}" title="Open property">↗</button><button type="button" data-out="${i}" title="Take out of route">×</button></span></li>`; }).join('') || '<p class="hint">Click pins on the map to add properties.</p>'}</ol>
           <div class="pf-tools" style="margin-top:10px">
             <button class="btn sm" type="button" id="mvBest" ${p.stops.length>1?'':'disabled'}>Best order</button>
             <button class="btn sm" type="button" id="mvRev" ${p.stops.length>1?'':'disabled'}>Reverse</button>
@@ -732,7 +821,7 @@ const PORTFOLIO = (()=>{
     $('mvAutoGo').onclick = ()=>{
       const per = Math.max(1, Math.min(40, Math.round(num($('mvPer').value)) || 10)); st.planPer = per;
       const routed = new Set(plans().flatMap(x=>x.stops));
-      const free = sorted().filter(s=>!routed.has(s.id) && ll(s) && s.data.include!==false && s.data.status!=='noquote' && s.data.job.status!=='done' && s.data.job.status!=='na').map(s=>s.id);
+      const free = sorted().filter(s=>!routed.has(s.id) && ll(s) && incl(s) && s.data.job.status!=='done' && s.data.job.status!=='na').map(s=>s.id);
       if(!free.length){ flash('Every property is already in a route'); return; }
       const order = bestOrder(free, startLL(), false);
       let day = $('mvFirst').value ? new Date($('mvFirst').value + 'T12:00:00') : null; const wk = $('mvWeekdays').checked;
@@ -792,16 +881,16 @@ const PORTFOLIO = (()=>{
       const routedBy = {}; plans().forEach(x=>x.stops.forEach((id,i)=>routedBy[id] = {plan:x, i}));
       const bounds = new google.maps.LatLngBounds(); let any = false;
       sorted().forEach(s=>{
-        const pos = ll(s); if(!pos) return;
+        const pos = ll(s); if(!pos || isGroup(s)) return;
         const r = routedBy[s.id], inThis = p && r && r.plan.id===p.id;
         const show = MV.show==='all' || inThis || (MV.show==='free' && !r) || (MV.show==='visit' && s.data.status==='visit') || (MV.show==='notdone' && s.data.job.status!=='done');
         if(!show) return;
         const col = MV.colour==='job' ? jobOf(s.data.job.status)[2] : statusOf(s.data.status)[2];
         const dim = p && r && !inThis;
         const m = new google.maps.Marker({position:pos, map:MV.map, zIndex: inThis ? 1000 : 10,
-          label:{text: inThis ? String(r.i+1) : String(s.ref), color: inThis ? '#fff' : '#132f47', fontSize:'11px', fontWeight:'700'},
+          label:{text: inThis ? String(r.i+1) : refOf(s), color: inThis ? '#fff' : '#132f47', fontSize:'11px', fontWeight:'700'},
           icon:{path:google.maps.SymbolPath.CIRCLE, scale: inThis ? 13 : 11, fillColor: inThis ? '#132f47' : col, fillOpacity: dim ? .45 : 1, strokeColor: inThis ? col : '#fff', strokeWeight: inThis ? 4 : 2},
-          title:`${s.ref}. ${s.name||s.address}\n${statusOf(s.data.status)[1]} · Job: ${jobOf(s.data.job.status)[1]}${r?`\nIn ${r.plan.name} (stop ${r.i+1})`:''}${p?`\nClick to ${inThis?'take out of':'add to'} ${p.name}`:''}`});
+          title:`${refOf(s)}. ${s.name||s.address}\n${statusOf(s.data.status)[1]} · Job: ${jobOf(s.data.job.status)[1]}${r?`\nIn ${r.plan.name} (stop ${r.i+1})`:''}${p?`\nClick to ${inThis?'take out of':'add to'} ${p.name}`:''}`});
         m.addListener('click', ()=>{
           if(!p){ flash('Make a route first, then click pins to add them'); return; }
           if(inThis) p.stops.splice(p.stops.indexOf(s.id), 1);
@@ -824,6 +913,20 @@ const PORTFOLIO = (()=>{
   }
 
   /* ---------- customer quote ---------- */
+  // schedule rows, with subsections listed under a heading for their group and a group subtotal
+  function schedRows(list, st, acc){
+    const cols = st.showAccess ? 7 : 6, out = []; let gid = null, gsum = 0, gname = '';
+    const close = () => { if(gid){ out.push(`<tr class="pf-q-gsub"><td></td><td colspan="${cols-2}">Subtotal – ${esc(gname)}</td><td class="r"><b>${gbp(gsum)}</b></td></tr>`); gid = null; gsum = 0; } };
+    list.forEach(s=>{
+      const p = parentOf(s), c = calc(s);
+      if((p && p.id) !== gid) close();
+      if(p && gid !== p.id){ gid = p.id; gname = p.name||p.address; out.push(`<tr class="pf-q-grp"><td>${esc(p.ref)}</td><td colspan="${cols-1}"><b>${esc(gname)}</b>${p.name?` <small>${esc(p.address)}${p.postcode?', '+esc(p.postcode):''}</small>`:''}${p.data.notes?`<br><small>${esc(p.data.notes)}</small>`:''}</td></tr>`); }
+      if(p) gsum += c.price;
+      out.push(`<tr class="${p?'pf-q-sub':''}"><td>${esc(refOf(s))}</td><td><b>${esc(s.name||s.address)}</b><br><small>${s.name&&s.name!==s.address?esc(s.address)+', ':''}${esc(s.postcode||'')}</small>${s.data.notes?`<br><small>${esc(s.data.notes)}</small>`:''}</td><td>${esc(s.data.type||'')}</td><td class="r">${esc(s.data.storeys||'')}</td><td class="r">${c.m.toFixed(0)}</td>${st.showAccess?`<td><small>${esc(acc(s).join(', ')||'–')}</small></td>`:''}<td class="r"><b>${gbp(c.price)}</b></td></tr>`);
+    });
+    close();
+    return out.join('') || `<tr><td colspan="${cols}"><small>No priced properties yet – add gutter lengths on the property pages.</small></td></tr>`;
+  }
   function quoteHTML(opts={}){
     const P = portfolioTotals(), st = S(), today = new Date(), valid = new Date(today.getTime() + num(st.validDays||30)*864e5);
     const fmt = d => d.toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'});
@@ -845,7 +948,7 @@ const PORTFOLIO = (()=>{
         <li>Fully insured – £2m public liability${st.rams?'; RAMS provided for the works':'; RAMS available on request'}</li></ul>
       <h3>Property schedule</h3>
       <table class="pf-q-tbl"><thead><tr><th>#</th><th>Property</th><th>Type</th><th class="r">Storeys</th><th class="r">Gutter (m)</th>${st.showAccess?'<th>Access notes</th>':''}<th class="r">Price</th></tr></thead>
-      <tbody>${P.priced.map(s=>{ const c = calc(s); return `<tr><td>${esc(s.ref)}</td><td><b>${esc(s.name||s.address)}</b><br><small>${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</small>${s.data.notes?`<br><small>${esc(s.data.notes)}</small>`:''}</td><td>${esc(s.data.type||'')}</td><td class="r">${esc(s.data.storeys||'')}</td><td class="r">${c.m.toFixed(0)}</td>${st.showAccess?`<td><small>${esc(acc(s).join(', ')||'–')}</small></td>`:''}<td class="r"><b>${gbp(c.price)}</b></td></tr>`; }).join('') || `<tr><td colspan="7"><small>No priced properties yet – add gutter lengths on the property pages.</small></td></tr>`}</tbody></table>
+      <tbody>${schedRows(P.priced, st, acc)}</tbody></table>
       <div class="pf-q-tot">
         <div><span>Subtotal (${P.priced.length} properties)</span><b>${gbp(P.sub)}</b></div>
         ${P.disc?`<div><span>Portfolio discount ${num(st.discPct)}%</span><b>–${gbp(P.disc)}</b></div>`:''}
@@ -854,7 +957,7 @@ const PORTFOLIO = (()=>{
         <div class="g"><span>Total</span><span>${gbp(P.gross)}</span></div>
         ${P.visits>1?`<div><span>${P.visits} visits per year</span><b>${gbp(P.annual)} / year</b></div>`:''}
       </div>
-      ${st.showPhotos && !opts.noPhotos?`<h3>Property survey images</h3><div class="pf-q-props">${P.priced.map(s=>`<div class="pf-q-prop"><div class="imgs">${okImg(s.photos.aerial)?`<img src="${esc(src(s.photos.aerial))}" alt="">`:'<div class="no">No aerial</div>'}${okImg(s.photos.street)?`<img src="${esc(src(s.photos.street))}" alt="">`:'<div class="no">No street view</div>'}</div><div class="tx"><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><br>${calc(s).m.toFixed(0)} m gutter · ${esc(s.data.storeys||'?')} storey${num(s.data.storeys)===1?'':'s'}${s.data.method?' · '+esc(s.data.method):''}</div></div>`).join('')}</div><p class="pf-q-small">Aerial and Street View imagery © Google.</p>`:''}
+      ${st.showPhotos && !opts.noPhotos?`<h3>Property survey images</h3><div class="pf-q-props">${P.priced.map(s=>`<div class="pf-q-prop"><div class="imgs">${okImg(s.photos.aerial)?`<img src="${esc(src(s.photos.aerial))}" alt="">`:'<div class="no">No aerial</div>'}${okImg(s.photos.street)?`<img src="${esc(src(s.photos.street))}" alt="">`:'<div class="no">No street view</div>'}</div><div class="tx"><b>${esc(refOf(s))}. ${esc(s.name||s.address)}</b><br>${calc(s).m.toFixed(0)} m gutter · ${esc(s.data.storeys||'?')} storey${num(s.data.storeys)===1?'':'s'}${s.data.method?' · '+esc(s.data.method):''}</div></div>`).join('')}</div><p class="pf-q-small">Aerial and Street View imagery © Google.</p>`:''}
       <h3>Terms</h3>
       <ul class="pf-q-small"><li>Prices are per visit and include all labour, equipment and waste removal. Quotation valid for ${num(st.validDays||30)} days.</li>
         <li>Properties may be accepted individually or as a portfolio${P.disc?`; the portfolio discount applies when ${num(st.discMin)} or more properties are booked`:''}.</li>
@@ -889,7 +992,7 @@ const PORTFOLIO = (()=>{
     $('pfPrint').onclick = ()=>{ document.body.classList.add('pf-printing'); setTimeout(()=>{ window.print(); setTimeout(()=>document.body.classList.remove('pf-printing'), 500); }, 50); };
     $('pfCopy').onclick = async ()=>{
       const P = portfolioTotals();
-      const lines = ['#\tSite\tAddress\tPostcode\tType\tStoreys\tGutter (m)\tPrice', ...P.priced.map(s=>{ const c = calc(s); return [s.ref, s.name, s.address, s.postcode, s.data.type, s.data.storeys, c.m.toFixed(0), gbp(c.price)].join('\t'); }), '', `Subtotal\t\t\t\t\t\t\t${gbp(P.sub)}`];
+      const lines = ['#\tSite\tAddress\tPostcode\tType\tStoreys\tGutter (m)\tPrice', ...P.priced.map(s=>{ const c = calc(s); return [refOf(s), s.name, s.address, s.postcode, s.data.type, s.data.storeys, c.m.toFixed(0), gbp(c.price)].join('\t'); }), '', `Subtotal\t\t\t\t\t\t\t${gbp(P.sub)}`];
       if(P.disc) lines.push(`Discount ${S().discPct}%\t\t\t\t\t\t\t-${gbp(P.disc)}`); if(P.rams) lines.push(`RAMS\t\t\t\t\t\t\t${gbp(P.rams)}`); if(S().vat) lines.push(`VAT\t\t\t\t\t\t\t${gbp(P.vat)}`); lines.push(`Total\t\t\t\t\t\t\t${gbp(P.gross)}`);
       try{ await navigator.clipboard.writeText(lines.join('\n')); flash('Schedule copied'); }catch(e){ flash('Copy was blocked by the browser'); }
     };
@@ -1051,7 +1154,7 @@ const PORTFOLIO = (()=>{
       </section>
       <section class="card"><h2>Retake survey images from Google</h2>
         <p class="hint">Replaces the saved aerial and Street View images with fresh ones taken at each property's current pin – useful after moving a pin. Reviewed images are left alone unless you tick the box.</p>
-        <div class="fields"><label class="f wide">Property numbers<input id="pfGRefs" placeholder="e.g. 6, 9, 11 – or leave blank for all"></label></div>
+        <div class="fields"><label class="f wide">Property numbers<input id="pfGRefs" placeholder="e.g. 6, 9, 11, 9.2 – or leave blank for all"></label></div>
         <div class="pf-tools" style="margin-top:8px"><label class="ck"><input type="checkbox" id="pfGA" checked>Aerial</label><label class="ck"><input type="checkbox" id="pfGS" checked>Street View</label><label class="ck"><input type="checkbox" id="pfGRev">Include reviewed images</label><span style="flex:1"></span><button class="btn pri" type="button" id="pfGGo">Retake images</button></div>
         <p class="hint" id="pfGMsg"></p>
       </section></div>`;
@@ -1069,9 +1172,9 @@ const PORTFOLIO = (()=>{
       (data||[]).forEach(s=>{ siteData(s); sites[s.id] = s; }); imp.value = ''; flash(`${data.length} properties added`); tab = 'summary'; render();
     };
     $('pfGGo').onclick = async ()=>{
-      const want = $('pfGRefs').value.split(/[^0-9]+/).filter(Boolean).map(Number), kinds = [...($('pfGA').checked?['aerial']:[]), ...($('pfGS').checked?['street']:[])];
+      const want = $('pfGRefs').value.split(/[^0-9.]+/).filter(Boolean), kinds = [...($('pfGA').checked?['aerial']:[]), ...($('pfGS').checked?['street']:[])];
       if(!kinds.length){ flash('Tick Aerial and/or Street View'); return; }
-      const list = sorted().filter(s=>!want.length || want.includes(num(s.ref))); if(!list.length){ flash('No properties with those numbers'); return; }
+      const list = sorted().filter(s=>!want.length || want.some(t=> t===refOf(s) || (!t.includes('.') && !parentOf(s) && num(t)===num(s.ref)))); if(!list.length){ flash('No properties with those numbers'); return; }
       const btn = $('pfGGo'), msg = $('pfGMsg'), inc = $('pfGRev').checked; btn.disabled = true; let ok = 0; const fails = [];
       for(let i=0;i<list.length;i++){ const s = list[i];
         for(const k of kinds){
@@ -1086,7 +1189,7 @@ const PORTFOLIO = (()=>{
     };
     $('pfImgImp').onchange = async e=>{
       const files = [...e.target.files]; const msg = $('pfImgMsg'); let ok = 0, skip = [];
-      const byRef = {}; Object.values(sites).forEach(s=>byRef[num(s.ref)] = s);
+      const byRef = {}; Object.values(sites).filter(s=>!parentOf(s)).forEach(s=>byRef[num(s.ref)] = s);
       for(let i=0;i<files.length;i++){
         const f = files[i], m = f.name.match(/(\d+)[ _-]*(aerial|street|site|before|after)/i);
         const s = m && byRef[+m[1]]; if(!s){ skip.push(f.name); continue; }

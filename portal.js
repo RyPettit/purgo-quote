@@ -16,6 +16,7 @@ const PORTAL = (()=>{
   const fmtD = v => { if(!v) return ''; const d = new Date(v); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'}); };
   const js = s => (s.job && s.job.status) || '';
   const src = p => urls[p.path] || '';
+  const rf = s => s.sub ? `${s.ref}.${s.sub}` : String(s.ref ?? '');   // subsections show as 9.1, 9.2 …
 
   async function onShow(){
     if(previewOf){ if(!P) return open(previewOf); return render(); }
@@ -91,7 +92,7 @@ const PORTAL = (()=>{
         <section class="card"><h3 style="margin-top:0">Recently completed</h3>${recent.length ? recent.map(siteLine).join('') : '<p class="hint">Nothing completed yet.</p>'}</section>
         <section class="card"><h3 style="margin-top:0">Coming up</h3>${next.length ? next.map(siteLine).join('') : '<p class="hint">No visits booked at the moment.</p>'}</section>
         ${n('noaccess') ? `<section class="card"><h3 style="margin-top:0">Couldn't access</h3>${S.filter(s=>js(s)==='noaccess').map(siteLine).join('')}<p class="hint">We'll be in touch to arrange access for these.</p></section>` : ''}
-        ${issues.length ? `<section class="card"><h3 style="margin-top:0">Defects reported</h3>${issues.map(s=>`<a href="#" class="pt-line" data-site="${s.id}"><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><small>${esc(s.report.issues.slice(0,120))}${s.report.issues.length>120?'…':''}</small></a>`).join('')}</section>` : ''}
+        ${issues.length ? `<section class="card"><h3 style="margin-top:0">Defects reported</h3>${issues.map(s=>`<a href="#" class="pt-line" data-site="${s.id}"><b>${esc(rf(s))}. ${esc(s.name||s.address)}</b><small>${esc(s.report.issues.slice(0,120))}${s.report.issues.length>120?'…':''}</small></a>`).join('')}</section>` : ''}
         ${P.files.length ? `<section class="card"><h3 style="margin-top:0">Documents</h3>${P.files.map(fileLink).join('')}</section>` : ''}
       </div>
       ${previewOf ? '' : pwBox()}`;
@@ -100,7 +101,7 @@ const PORTAL = (()=>{
   function siteLine(s){
     const j = s.job || {}, st = JOB[js(s)] || JOB[''];
     const when = js(s)==='done' ? fmtD(j.done) : js(s)==='booked' ? (j.booked ? fmtD(j.booked) : 'Date to be confirmed') : js(s)==='noaccess' ? (j.reason||'') : '';
-    return `<a href="#" class="pt-line" data-site="${s.id}"><b>${esc(s.ref)}. ${esc(s.name||s.address)}</b><small><span class="pt-st ${st[1]}">${st[0]}</span>${when?' '+esc(when):''}${s.photos&&s.photos.length?` · ${s.photos.length} photo${s.photos.length>1?'s':''}`:''}</small></a>`;
+    return `<a href="#" class="pt-line" data-site="${s.id}"><b>${esc(rf(s))}. ${esc(s.name||s.address)}</b><small><span class="pt-st ${st[1]}">${st[0]}</span>${when?' '+esc(when):''}${s.photos&&s.photos.length?` · ${s.photos.length} photo${s.photos.length>1?'s':''}`:''}</small></a>`;
   }
   const fileLink = f => `<a class="pt-file" href="${esc(src(f))}" target="_blank" rel="noopener"><span class="pf-fi">${/\.pdf$/i.test(f.path||'')?'PDF':'IMG'}</span><b>${esc(f.name||'Document')}</b><small>${fmtD(f.added)}</small></a>`;
   function bindLines(box){ box.querySelectorAll('[data-site]').forEach(a=> a.onclick = e=>{ e.preventDefault(); siteId = a.dataset.site; tab = 'sites'; render(); window.scrollTo(0,0); }); }
@@ -111,7 +112,7 @@ const PORTAL = (()=>{
       <div class="pf-tools"><input type="search" id="ptQ" placeholder="Search name, address, postcode…" value="${esc(q)}">
         <select id="ptF"><option value="">All</option>${Object.entries(JOB).map(([k,v])=>`<option value="k:${k}" ${filter===k?'selected':''}>${v[0]} (${P.sites.filter(s=>js(s)===k).length})</option>`).join('')}</select></div>
       <div class="pf-tbl"><table class="pt-tbl"><thead><tr><th>#</th><th>Property</th><th>Status</th><th>Date</th><th class="r">Photos</th><th>Report</th></tr></thead>
-      <tbody>${rows.map(s=>{ const st = JOB[js(s)]||JOB[''], j = s.job||{}; return `<tr data-site="${s.id}"><td>${esc(s.ref)}</td><td><b>${esc(s.name||s.address)}</b><small>${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</small></td><td><span class="pt-st ${st[1]}">${st[0]}</span></td><td>${js(s)==='done'?fmtD(j.done):js(s)==='booked'?(fmtD(j.booked)||'TBC'):''}</td><td class="r">${(s.photos||[]).length||''}</td><td>${s.report?'✓':''}${(s.files||[]).length?` <small>${s.files.length} file${s.files.length>1?'s':''}</small>`:''}</td></tr>`; }).join('') || '<tr><td colspan="6"><small>No properties match.</small></td></tr>'}</tbody></table></div></section>`;
+      <tbody>${rows.map(s=>{ const st = JOB[js(s)]||JOB[''], j = s.job||{}; return `<tr data-site="${s.id}"><td>${esc(rf(s))}</td><td><b>${esc(s.name||s.address)}</b><small>${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</small></td><td><span class="pt-st ${st[1]}">${st[0]}</span></td><td>${js(s)==='done'?fmtD(j.done):js(s)==='booked'?(fmtD(j.booked)||'TBC'):''}</td><td class="r">${(s.photos||[]).length||''}</td><td>${s.report?'✓':''}${(s.files||[]).length?` <small>${s.files.length} file${s.files.length>1?'s':''}</small>`:''}</td></tr>`; }).join('') || '<tr><td colspan="6"><small>No properties match.</small></td></tr>'}</tbody></table></div></section>`;
     $('ptQ').oninput = e=>{ q = e.target.value; const p = e.target.selectionStart; renderSites(box); const el = $('ptQ'); el.focus(); el.setSelectionRange(p,p); };
     $('ptF').onchange = e=>{ filter = e.target.value ? e.target.value.slice(2) : null; renderSites(box); };
     box.querySelectorAll('tr[data-site]').forEach(r=> r.onclick = ()=>{ siteId = r.dataset.site; render(); window.scrollTo(0,0); });
@@ -127,7 +128,7 @@ const PORTAL = (()=>{
       <div class="pf-head pf-noprint"><p class="hint" style="margin:0;flex:1"><a href="#" id="ptBack">← All properties</a></p>
         <div class="pf-pager"><button class="btn" type="button" id="ptPrev" ${i>0?'':'disabled'}>← Prev</button><button class="btn" type="button" id="ptNext" ${i<S.length-1?'':'disabled'}>Next →</button></div></div>
       <section class="card">
-        <p class="hint" style="margin:0">PROPERTY ${esc(s.ref)}</p><h2 class="vtitle" style="font-size:1.35rem">${esc(s.name||s.address)}</h2><p class="sub">${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</p>
+        <p class="hint" style="margin:0">PROPERTY ${esc(rf(s))}${s.group?' · PART OF '+esc(s.group).toUpperCase():''}</p><h2 class="vtitle" style="font-size:1.35rem">${esc(s.name||s.address)}</h2><p class="sub">${s.name?esc(s.address)+', ':''}${esc(s.postcode||'')}</p>
         <div class="pt-status"><span class="pt-st big ${st[1]}">${st[0]}</span>
           ${js(s)==='done'&&j.done?`<span>Completed ${fmtD(j.done)}</span>`:''}${js(s)==='booked'?`<span>${j.booked?'Booked for '+fmtD(j.booked):'Date to be confirmed'}</span>`:''}${js(s)==='noaccess'&&j.reason?`<span>${esc(j.reason)}</span>`:''}</div>
       </section>
