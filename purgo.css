@@ -529,3 +529,12 @@ section.card.pf-price{background:var(--brand);color:var(--brand-ink);border-colo
   .ac-stats{grid-template-columns:1fr 1fr}
 }
 a.btn{text-decoration:none;display:inline-block}
+.ac-dup{margin-top:12px}
+.ac-dup .qitem{grid-template-columns:minmax(0,1fr) auto auto}
+.ac-why{color:var(--warn)!important;font-weight:600}
+.ac-dlg{border:1px solid var(--line);border-radius:12px;padding:20px;max-width:560px;width:calc(100% - 32px);background:var(--panel);color:var(--ink)}
+.ac-dlg::backdrop{background:rgba(10,26,40,.45)}
+.ac-dlg h2{margin:0 0 6px;font-size:1.2rem}
+.ac-arow{margin-top:6px;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto}
+.ac-arm{justify-content:flex-end}
+@media (max-width:560px){.ac-arow{grid-template-columns:1fr 1fr}.ac-arow label:first-child{grid-column:1/-1}}

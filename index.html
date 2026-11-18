@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=8df04c8f4d">
+<link rel="stylesheet" href="purgo.css?v=6fbeb82c0b">
 </head>
 <body>
 <header class="topbar">
@@ -158,14 +158,16 @@
         <div class="svc-head"><h2>Windows <span class="tag">pure water</span></h2><label class="switch"><input type="checkbox" class="svc" id="on-wn"></label></div>
         <div class="svc-body">
           <div class="fields">
+            <label class="f wide">How do you want to price it?<select id="wnPrice"><option value="builder">Use the window quote builder</option><option value="own">Enter my own price</option></select></label>
+            <label class="f wn-o" hidden>Window clean price £<input id="wnOwn" type="number" min="0" step="0.5" value="0" inputmode="decimal"></label>
             <label class="f">Workers<input id="wWn" type="number" min="1" max="6" placeholder="whole crew"></label>
-            <label class="f">Pricing<select id="wnMode"><option value="type">By property type</option><option value="count">Per window</option></select></label>
-            <label class="f">Property size<select id="wnType"><option value="T">Terrace</option><option value="S" selected>Semi-detached</option><option value="D">Detached</option></select></label>
+            <label class="f wn-b">Pricing<select id="wnMode"><option value="type">By property type</option><option value="count">Per window</option></select></label>
+            <label class="f wn-b">Property size<select id="wnType"><option value="T">Terrace</option><option value="S" selected>Semi-detached</option><option value="D">Detached</option></select></label>
             <label class="f">Number of windows<input id="wnCount" type="number" min="0" value="0"></label>
             <label class="f">Storeys<select id="wnSt"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4+</option></select></label>
             <label class="f">Conservatory roof £<input id="wnCons" type="number" min="0" step="5" value="0"></label>
           </div>
-          <div class="checks" style="margin-top:12px">
+          <div class="checks wn-b" style="margin-top:12px">
             <label class="ck"><input type="checkbox" id="wnSills" checked>Sills &amp; doors</label>
             <label class="ck"><input type="checkbox" id="wnFirst">First / one-off clean (build-up) <small>+<span data-r="firstClean"></span>%</small></label>
           </div>
@@ -284,7 +286,7 @@
   </section>
 </main>
 
-<!-- ACCOUNTS (filled by accounts.js?v=71f54bd684) -->
+<!-- ACCOUNTS (filled by accounts.js?v=ef78066c0b) -->
 <main id="view-accounts" class="wrap" hidden></main>
 <!-- PORTFOLIOS (filled by portfolio.js?v=0aa4f8f075) -->
 <main id="view-portfolio" class="wrap" hidden></main>
@@ -409,10 +411,10 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=1b8b201afc"></script>
+<script src="purgo.js?v=78337799e1"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=0aa4f8f075"></script>
-<script src="accounts.js?v=71f54bd684"></script>
+<script src="accounts.js?v=ef78066c0b"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

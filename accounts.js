@@ -1,13 +1,13 @@
 /* =====================================================================
    Purgō Accounts (CRM): one record per customer — household, business or
-   managing agent — holding their details, contacts, properties, quotes,
+   commercial customer — holding their details, contacts, properties, quotes,
    invoices (next phase) and every communication.
    Quotes join an account automatically when saved (database trigger), so
    nothing about quoting changes for staff.
    Uses from purgo.js: $, esc, gbp, sb, ME, ROLE, show, flash, noLabel, slug, normPc, fmtPc, isNetErr, confirmInline
    ===================================================================== */
 const ACCOUNTS = (()=>{
-  const KINDS = {res:'Residential', com:'Commercial', agent:'Managing agent'};
+  const KINDS = {res:'Residential', com:'Commercial'};
   const STATUSES = {lead:'Lead', active:'Customer', inactive:'Inactive'};
   const COMMS = {note:'Note', call:'Phone call', sms:'Text message', email:'Email', visit:'Site visit'};
   const QST = {draft:'Draft', sent:'Sent', accepted:'Accepted', declined:'Declined'};
@@ -20,13 +20,14 @@ const ACCOUNTS = (()=>{
 
   let list = [], loaded = false, loading = false, err = '';
   let f = {q:'', kind:'', status:''}, sortKey = 'recent';
-  let cur = null, tab = 'overview', detail = null, composer = null, editContact = null, mergeOpen = false;
+  let cur = null, tab = 'overview', detail = null, composer = null, editContact = null, editAddr = null, pfForm = false, mergeOpen = false;
+  let newAddrs = [{line:'', pc:''}];
 
   /* ---------- data ---------- */
   async function loadList(){
     loading = true;
     const {data, error} = await sb.from('accounts')
-      .select('id,account_no,name,kind,status,email,phone,billing_line,billing_postcode,tags,portfolio_id,updated_at,created_at,quotes(id,status,total,created_at,updated_at),addresses(id),account_comms(occurred_at)')
+      .select('id,account_no,name,kind,status,email,phone,billing_line,billing_postcode,tags,updated_at,created_at,portfolios(id),quotes(id,status,total,created_at,updated_at),addresses(id),account_comms(occurred_at)')
       .order('name').limit(5000);
     loading = false;
     if(error) throw error;
@@ -35,7 +36,7 @@ const ACCOUNTS = (()=>{
       const lastQ = qs.reduce((m,q)=>Math.max(m, +new Date(q.updated_at||q.created_at)||0), 0);
       const lastC = (a.account_comms||[]).reduce((m,c)=>Math.max(m, +new Date(c.occurred_at)||0), 0);
       return Object.assign(a, {
-        nQuotes: qs.length, nProps: (a.addresses||[]).length,
+        nQuotes: qs.length, nProps: (a.addresses||[]).length, nPf: (a.portfolios||[]).length,
         won: qs.filter(q=>q.status==='accepted').reduce((s,q)=>s+(+q.total||0),0),
         open: qs.filter(q=>q.status==='sent'||q.status==='draft').reduce((s,q)=>s+(+q.total||0),0),
         lastAt: Math.max(lastQ, lastC, +new Date(a.created_at)||0)
@@ -53,9 +54,10 @@ const ACCOUNTS = (()=>{
     ]);
     for(const r of [a,c,q,p,m]) if(r.error) throw r.error;
     if(!a.data) throw new Error('This account no longer exists.');
-    let pf = null;
-    if(a.data.portfolio_id){ const r = await sb.from('portfolios').select('id,name,status').eq('id', a.data.portfolio_id).maybeSingle(); pf = r.data||null; }
-    detail = {acc:a.data, contacts:c.data, quotes:q.data, props:p.data, comms:m.data, portfolio:pf};
+    const pf = await sb.from('portfolios').select('id,name,status,updated_at,account_id,portfolio_sites(count)').or(`account_id.eq.${id},account_id.is.null`).order('updated_at', {ascending:false});
+    if(pf.error) throw pf.error;
+    detail = {acc:a.data, contacts:c.data, quotes:q.data, props:p.data, comms:m.data,
+      portfolios:pf.data.filter(x=>x.account_id===id), freePortfolios:pf.data.filter(x=>!x.account_id)};
   }
 
   /* ---------- list ---------- */
@@ -87,7 +89,7 @@ const ACCOUNTS = (()=>{
         <button type="button" class="ac-row" data-acc="${a.id}">
           <span class="ac-n"><b>${esc(a.name)}</b><small>${accNo(a.account_no)} · ${KINDS[a.kind]||''}${a.billing_postcode?' · '+esc(a.billing_postcode):''}</small></span>
           <span class="ac-c"><small>${esc(a.phone||'')}</small><small>${esc(a.email||'')}</small></span>
-          <span class="ac-q"><small>${a.nQuotes} quote${a.nQuotes===1?'':'s'}${a.nProps?` · ${a.nProps} propert${a.nProps===1?'y':'ies'}`:''}</small><small>${a.won?`${gbp(a.won)} won`:''}${a.won&&a.open?' · ':''}${a.open?`${gbp(a.open)} open`:''}</small></span>
+          <span class="ac-q"><small>${a.nQuotes} quote${a.nQuotes===1?'':'s'}${a.nProps?` · ${a.nProps} ${a.kind==='com'?'site':'address'}${a.nProps===1?'':a.kind==='com'?'s':'es'}`:''}${a.nPf?` · ${a.nPf} portfolio${a.nPf===1?'':'s'}`:''}</small><small>${a.won?`${gbp(a.won)} won`:''}${a.won&&a.open?' · ':''}${a.open?`${gbp(a.open)} open`:''}</small></span>
           <span class="pill ac-st ${a.status}">${STATUSES[a.status]}</span>
         </button>`).join('') : `<p class="hint">${loading ? 'Loading accounts…' : list.length ? 'No accounts match the search or filters.' : 'No accounts yet. Every saved quote opens an account automatically, or press New account.'}</p>`}</div>
     </section>`;
@@ -106,41 +108,101 @@ const ACCOUNTS = (()=>{
     if(!cur) renderList();
   }
 
+  /* ---------- duplicate warning ---------- */
+  // possible existing accounts for these details (server does the fuzzy matching)
+  async function candidates(d){
+    const {data, error} = await sb.rpc('account_candidates', {p_name:d.name||'', p_email:d.email||'', p_phone:d.phone||'', p_postcode:d.postcode||'', p_line:d.line||''});
+    if(error) throw error;
+    return data||[];
+  }
+  function dupHTML(hits, useLabel){
+    return `<div class="ac-dup"><p class="note w"><b>This customer may already have an account.</b> Check before making a new one.</p>
+      ${hits.map(h=>`<div class="qitem"><div class="m"><b>${esc(h.name)} <span class="ref-inline">${accNo(h.account_no)}</span></b><small>${KINDS[h.kind]||''}${h.place?' · '+esc(h.place):''}${h.phone?' · '+esc(h.phone):''}${h.email?' · '+esc(h.email):''}</small><small class="ac-why">${esc(h.reason)}</small></div><div></div>
+        <div class="qacts"><button class="btn sm pri" type="button" data-dupuse="${h.id}">${useLabel}</button></div></div>`).join('')}
+    </div>`;
+  }
+  // used by the quote builder before saving a quote with no account: resolves to an account {id,name,account_no},
+  // 'new' (they chose a new account despite matches), 'none' (no matches: let the database open one), or null (cancelled)
+  function pickForQuote(d){
+    return new Promise(async resolve=>{
+      let hits = [];
+      try{ hits = await candidates(d); }catch(e){ return resolve('none'); }   // can't check (offline/error): save as normal
+      if(!hits.length) return resolve('none');
+      const dlg = document.createElement('dialog'); dlg.className = 'ac-dlg';
+      dlg.innerHTML = `<h2>Existing customer?</h2>${dupHTML(hits, 'Use this account')}
+        <div class="vb-actions" style="margin-top:14px"><button class="btn" type="button" data-dupx>Cancel</button><button class="btn" type="button" data-dupnew>New account for ${esc(d.name||'this customer')}</button></div>`;
+      document.body.appendChild(dlg);
+      const done = v=>{ dlg.close(); dlg.remove(); resolve(v); };
+      dlg.querySelectorAll('[data-dupuse]').forEach(b=> b.onclick = ()=> done(hits.find(h=>h.id===b.dataset.dupuse)));
+      dlg.querySelector('[data-dupnew]').onclick = ()=> done('new');
+      dlg.querySelector('[data-dupx]').onclick = ()=> done(null);
+      dlg.addEventListener('cancel', e=>{ e.preventDefault(); done(null); });
+      dlg.showModal();
+    });
+  }
+
   /* ---------- new account ---------- */
+  let naKind = 'res';
   function newForm(){
     const c = $('acNewCard'); c.hidden = false;
-    c.innerHTML = `<h2>New account</h2>
+    const keep = {}; c.querySelectorAll('input').forEach(i=>keep[i.id]=i.value);
+    c.innerHTML = `<div class="svc-head"><h2>New account</h2><div class="seg" id="naKind">${Object.entries(KINDS).map(([k,v])=>`<button type="button" data-v="${k}" class="${naKind===k?'on':''}">${v}</button>`).join('')}</div></div>
       <div class="fields" style="margin-top:12px">
-        <label class="f">Name<input id="naName" placeholder="Customer, business or agent"></label>
-        <label class="f">Type<select id="naKind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+        <label class="f">${naKind==='com'?'Business name':'Name'}<input id="naName" placeholder="${naKind==='com'?'e.g. Pure Block Management':'Customer name'}"></label>
         <label class="f">Phone<input id="naPhone" inputmode="tel"></label>
         <label class="f">Email<input id="naEmail" type="email" autocapitalize="off" spellcheck="false"></label>
-        <label class="f">Address<input id="naLine"></label>
-        <label class="f">Postcode<input id="naPc"></label>
         <label class="f">How they found us<input id="naSource" placeholder="Google, Facebook, referral…"></label>
       </div>
+      <h3>${naKind==='com'?'Business address':'Addresses'}</h3>
+      <div id="naAddrs">${(naKind==='com' ? newAddrs.slice(0,1) : newAddrs).map((a,i)=>`<div class="fields ac-arow">
+        <label class="f">${naKind==='com'?'Address':i===0?'Main address':'Address '+(i+1)}<input data-na="line" data-i="${i}" value="${esc(a.line)}"></label>
+        <label class="f">Postcode<input data-na="pc" data-i="${i}" value="${esc(a.pc)}"></label>
+        ${i>0 ? `<div class="f ac-arm"><button class="btn sm del" type="button" data-narm="${i}">Remove</button></div>` : ''}
+      </div>`).join('')}</div>
+      ${naKind==='res' ? `<button class="btn sm" type="button" id="naAddA" style="margin-top:8px">+ Add another address</button>` : `<p class="hint">Add portfolios and extra sites from the account page once it's created.</p>`}
+      <div id="naDup"></div>
       <div class="vb-actions" style="margin-top:12px"><button class="btn" type="button" id="naCancel">Cancel</button><button class="btn pri" type="button" id="naSave">Create account</button></div>`;
+    Object.entries(keep).forEach(([id,v])=>{ if(id && $(id)) $(id).value = v; });
     $('naName').focus();
-    $('naCancel').onclick = ()=>{ c.hidden = true; c.innerHTML = ''; };
+    c.querySelectorAll('#naKind button').forEach(b=> b.onclick = ()=>{ naKind = b.dataset.v; newForm(); });
+    c.querySelectorAll('[data-na]').forEach(el=> el.oninput = ()=>{ newAddrs[+el.dataset.i][el.dataset.na] = el.value; $('naDup').innerHTML = ''; });
+    ['naName','naPhone','naEmail'].forEach(id=> $(id).addEventListener('input', ()=>{ $('naDup').innerHTML = ''; $('naSave').textContent = 'Create account'; }));
+    c.querySelectorAll('[data-narm]').forEach(b=> b.onclick = ()=>{ newAddrs.splice(+b.dataset.narm,1); newForm(); });
+    if($('naAddA')) $('naAddA').onclick = ()=>{ newAddrs.push({line:'', pc:''}); newForm(); c.querySelector(`[data-na="line"][data-i="${newAddrs.length-1}"]`).focus(); };
+    $('naCancel').onclick = ()=>{ c.hidden = true; c.innerHTML = ''; newAddrs = [{line:'', pc:''}]; };
     $('naSave').onclick = async ()=>{
       const name = $('naName').value.trim(); if(!name){ flash('Give the account a name'); return; }
       const email = $('naEmail').value.trim().toLowerCase(), phone = $('naPhone').value.trim();
-      const dup = list.find(a=> (email && (a.email||'').toLowerCase()===email) || (digits(phone).length>=10 && digits(a.phone)===digits(phone)));
-      if(dup && !confirmInline('naDup', `${dup.name} (${accNo(dup.account_no)}) already has that ${email && (dup.email||'').toLowerCase()===email ? 'email' : 'phone number'}. Press Create account again to make a separate account anyway.`)) return;
-      $('naSave').disabled = true;
-      const line = $('naLine').value.trim(), pc = fmtPc($('naPc').value);
-      const rec = {name, kind:$('naKind').value, phone:phone||null, email:email||null, billing_line:line||null, billing_postcode:pc||null, source:$('naSource').value.trim()||null, created_by_name:ME.name};
+      const addrs = (naKind==='com' ? newAddrs.slice(0,1) : newAddrs).map(a=>({line:a.line.trim(), pc:fmtPc(a.pc)})).filter(a=>a.line||a.pc);
+      const first = addrs[0] || {line:'', pc:''};
+      const btn = $('naSave');
+      // warn about possible duplicates first; pressing again creates anyway
+      if(btn.dataset.checked!=='1'){
+        btn.disabled = true;
+        let hits = [];
+        try{ for(const a of addrs.length ? addrs : [first]){ (await candidates({name, email, phone, postcode:a.pc, line:a.line})).forEach(h=>{ if(!hits.some(x=>x.id===h.id)) hits.push(h); }); } }
+        catch(e){ btn.disabled = false; flash('Could not check for existing accounts: ' + (isNetErr(e)?'no connection':e.message)); return; }
+        btn.disabled = false;
+        if(hits.length){
+          $('naDup').innerHTML = dupHTML(hits, 'Open this account');
+          $('naDup').querySelectorAll('[data-dupuse]').forEach(b=> b.onclick = ()=>{ c.hidden = true; newAddrs = [{line:'', pc:''}]; open(b.dataset.dupuse); });
+          btn.dataset.checked = '1'; btn.textContent = 'Create new account anyway';
+          return;
+        }
+      }
+      btn.disabled = true;
+      const rec = {name, kind:naKind, phone:phone||null, email:email||null, billing_line:first.line||null, billing_postcode:first.pc||null, source:$('naSource').value.trim()||null, created_by_name:ME.name};
       const {data, error} = await sb.from('accounts').insert(rec).select('id').single();
-      $('naSave').disabled = false;
-      if(error){ flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return; }
-      if(line || pc) await sb.from('addresses').upsert({key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:name, phone, email, account_id:data.id}, {onConflict:'key'});
+      if(error){ btn.disabled = false; flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return; }
+      for(const a of addrs) await sb.from('addresses').upsert({key:slug(normPc(a.pc)+'-'+a.line), line:a.line, postcode:a.pc, customer:name, phone, email, account_id:data.id}, {onConflict:'key'});
+      newAddrs = [{line:'', pc:''}];
       flash(`Created ${name}`); loaded = false; open(data.id);
     };
   }
 
   /* ---------- account page ---------- */
   async function open(id){
-    cur = id; tab = tabFromSession(id); composer = null; editContact = null; mergeOpen = false;
+    cur = id; tab = tabFromSession(id); composer = null; editContact = null; editAddr = null; pfForm = false; mergeOpen = false;
     try{ sessionStorage.setItem('acCur', id); }catch(e){}
     if($('view-accounts').hidden) show('accounts');
     root().innerHTML = `<section class="card"><p class="hint">Loading account…</p></section>`;
@@ -210,7 +272,6 @@ const ACCOUNTS = (()=>{
           <label class="f wide">Notes<textarea data-af="notes" rows="3" placeholder="Gate code, parking, preferences…">${esc(a.notes||'')}</textarea></label>
         </div>
         <div class="vb-actions" style="margin-top:12px"><span class="hint" id="acSaved"></span><button class="btn pri" type="button" id="acSave" disabled>Save changes</button></div>
-        ${detail.portfolio ? `<p class="hint" style="margin-top:10px">Portfolio: <b>${esc(detail.portfolio.name)}</b> <button class="btn sm" type="button" id="acPf">Open portfolio</button></p>` : ''}
         ${admin ? `<details class="ac-admin"><summary>Merge or delete</summary>
           <p class="hint">If the same customer has ended up with two accounts, merge this one into the other: its quotes, properties, contacts and communication all move across and this account is removed.</p>
           <div class="fields one"><label class="f">Merge into<input id="acMergeQ" placeholder="Search accounts"><div class="sugg" id="acMergeSugg" hidden></div></label></div>
@@ -225,18 +286,39 @@ const ACCOUNTS = (()=>{
             <div class="qacts">${c.phone?`<a class="btn sm" href="tel:${esc(digits(c.phone))}">Call</a>`:''}${c.email?`<a class="btn sm" href="mailto:${esc(c.email)}">Email</a>`:''}<button class="btn sm" type="button" data-cedit="${c.id}">Edit</button></div></div>`).join('')}
           ${editContact==='new' ? contactForm({}) : ''}</div>
         </section>
+        ${a.kind==='com' ? portfolioCard() : ''}
         <section class="card">
-          <div class="svc-head"><h2>Properties</h2><button class="btn sm" type="button" id="acAddP">+ Add property</button></div>
+          <div class="svc-head"><h2>${a.kind==='com'?'Sites':'Addresses'}</h2><button class="btn sm" type="button" id="acAddP">+ Add ${a.kind==='com'?'site':'address'}</button></div>
           <div class="qlist" style="margin-top:8px">
-          ${detail.props.map(p=>`<div class="qitem"><div class="m"><b>${esc(p.line||'(no address)')}</b><small>${esc(p.postcode||'')}${p.last_quoted?' · last quoted '+fmtD(p.last_quoted):''}</small>${p.notes?`<small>${esc(p.notes)}</small>`:''}</div><div></div><div class="qacts"><button class="btn sm" type="button" data-pquote="${p.id}">Quote</button></div></div>`).join('') || '<p class="hint">Properties appear here when you quote for this customer, or add one.</p>'}
-          <div class="fields" id="acPForm" style="margin-top:10px" hidden>
-            <label class="f">Address<input id="apLine"></label><label class="f">Postcode<input id="apPc"></label>
-            <label class="f wide">Access notes<input id="apNotes" placeholder="Gate code, parking, dog…"></label>
-            <div class="vb-actions wide"><button class="btn sm" type="button" id="apCancel">Cancel</button><button class="btn sm pri" type="button" id="apSave">Save property</button></div>
-          </div></div>
+          ${detail.props.map(p=> editAddr===p.id ? addrForm(p) : `<div class="qitem"><div class="m"><b>${esc(p.line||'(no address)')}</b><small>${esc(p.postcode||'')}${p.last_quoted?' · last quoted '+fmtD(p.last_quoted):''}</small>${p.notes?`<small>${esc(p.notes)}</small>`:''}</div><div></div>
+            <div class="qacts"><button class="btn sm" type="button" data-aedit="${p.id}">Edit</button><button class="btn sm pri" type="button" data-pquote="${p.id}">Quote</button></div></div>`).join('')}
+          ${!detail.props.length && editAddr!=='new' ? `<p class="hint">${a.kind==='com'?'Sites':'Addresses'} appear here when you quote for this customer, or add one. A customer can have as many as you need — e.g. their home and a rental property.</p>` : ''}
+          ${editAddr==='new' ? addrForm({}) : ''}
+          </div>
         </section>
       </div>
     </div>`;
+  }
+  function addrForm(p){
+    return `<div class="fields ac-cform" style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <label class="f">Address<input id="apLine" value="${esc(p.line||'')}"></label><label class="f">Postcode<input id="apPc" value="${esc(p.postcode||'')}"></label>
+      <label class="f wide">Access notes<input id="apNotes" value="${esc(p.notes||'')}" placeholder="Gate code, parking, dog…"></label>
+      <div class="vb-actions wide">${p.id ? `<button class="btn sm del" type="button" id="apDel">Remove from account</button>` : ''}<button class="btn sm" type="button" id="apCancel">Cancel</button><button class="btn sm pri" type="button" id="apSave">Save ${detail.acc.kind==='com'?'site':'address'}</button></div>
+    </div>`;
+  }
+  function portfolioCard(){
+    const pfs = detail.portfolios;
+    return `<section class="card">
+      <div class="svc-head"><h2>Portfolios</h2>${pfForm ? '' : `<button class="btn sm" type="button" id="acAddPf">+ Add portfolio</button>`}</div>
+      <p class="hint" style="margin-top:6px">One quote covering many properties for this customer, e.g. a block manager's buildings.</p>
+      <div class="qlist">${pfs.map(p=>`<div class="qitem"><div class="m"><b>${esc(p.name)}</b><small>${(p.portfolio_sites&&p.portfolio_sites[0]&&p.portfolio_sites[0].count)||0} properties · updated ${fmtD(p.updated_at)}</small></div><span class="pill ${esc(p.status)}">${esc(p.status)}</span><div class="qacts"><button class="btn sm" type="button" data-pfopen="${p.id}">Open</button></div></div>`).join('')}
+      ${!pfs.length && !pfForm ? '<p class="hint">No portfolios yet.</p>' : ''}</div>
+      ${pfForm ? `<div class="fields ac-cform" style="padding-top:10px">
+        <label class="f wide">New portfolio name<input id="pfnName" placeholder="e.g. ${esc(detail.acc.name)} – gutter cleans"></label>
+        ${detail.freePortfolios.length ? `<label class="f wide">…or link an existing portfolio<select id="pfnLink"><option value="">—</option>${detail.freePortfolios.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>` : ''}
+        <div class="vb-actions wide"><button class="btn sm" type="button" id="pfnCancel">Cancel</button><button class="btn sm pri" type="button" id="pfnSave">Add portfolio</button></div>
+      </div>` : ''}
+    </section>`;
   }
   function contactForm(c){
     return `<div class="fields ac-cform" style="padding:10px 0;border-bottom:1px solid var(--line)">
@@ -335,7 +417,25 @@ const ACCOUNTS = (()=>{
         detail.acc = data; loaded = false; flash('Account saved'); renderDetail();
       };
     }
-    if($('acPf')) $('acPf').onclick = ()=>{ try{ sessionStorage.setItem('pfCur', detail.portfolio.id); }catch(e){} if(typeof PORTFOLIO!=='undefined' && PORTFOLIO.open){ show('portfolio'); PORTFOLIO.open(detail.portfolio.id); } else show('portfolio'); };
+    // portfolios (commercial)
+    const openPf = id=>{ try{ sessionStorage.setItem('pfCur', id); }catch(e){} show('portfolio'); if(typeof PORTFOLIO!=='undefined' && PORTFOLIO.open) PORTFOLIO.open(id); };
+    root().querySelectorAll('[data-pfopen]').forEach(b=> b.onclick = ()=> openPf(b.dataset.pfopen));
+    if($('acAddPf')) $('acAddPf').onclick = ()=>{ pfForm = true; renderDetail(); $('pfnName').focus(); };
+    if($('pfnCancel')) $('pfnCancel').onclick = ()=>{ pfForm = false; renderDetail(); };
+    if($('pfnSave')) $('pfnSave').onclick = async ()=>{
+      const link = $('pfnLink') && $('pfnLink').value, name = $('pfnName').value.trim();
+      if(!link && !name){ flash('Name the new portfolio, or pick one to link'); return; }
+      $('pfnSave').disabled = true;
+      if(link){
+        const {error} = await sb.from('portfolios').update({account_id:a.id}).eq('id', link);
+        if(error){ $('pfnSave').disabled = false; flash('Not linked: ' + error.message); return; }
+        pfForm = false; await reload(); flash('Portfolio linked'); return;
+      }
+      const ref = 'PF-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-4);
+      const {data, error} = await sb.from('portfolios').insert({name, client:a.name, email:a.email, account_id:a.id, created_by_name:ME.name, settings:{quoteRef:ref}}).select('id').single();
+      if(error){ $('pfnSave').disabled = false; flash('Not created: ' + error.message); return; }
+      pfForm = false; loaded = false; flash('Portfolio created'); openPf(data.id);
+    };
     // admin: merge / delete
     if($('acMergeQ')){
       const box = $('acMergeSugg');
@@ -380,16 +480,25 @@ const ACCOUNTS = (()=>{
       if(r.error){ flash('Not removed: ' + r.error.message); return; }
       editContact = null; await reload();
     };
-    // properties
-    if($('acAddP')) $('acAddP').onclick = ()=>{ $('acPForm').hidden = false; $('apLine').focus(); };
-    if($('apCancel')) $('apCancel').onclick = ()=>{ $('acPForm').hidden = true; };
+    // addresses / sites
+    if($('acAddP')) $('acAddP').onclick = ()=>{ editAddr = 'new'; renderDetail(); $('apLine').focus(); };
+    root().querySelectorAll('[data-aedit]').forEach(b=> b.onclick = ()=>{ editAddr = b.dataset.aedit; renderDetail(); });
+    if($('apCancel')) $('apCancel').onclick = ()=>{ editAddr = null; renderDetail(); };
     if($('apSave')) $('apSave').onclick = async ()=>{
-      const line = $('apLine').value.trim(), pc = fmtPc($('apPc').value);
+      const line = $('apLine').value.trim(), pc = fmtPc($('apPc').value), notes = $('apNotes').value.trim()||null;
       if(!line && !pc){ flash('Add an address or postcode'); return; }
       $('apSave').disabled = true;
-      const {error} = await sb.from('addresses').upsert({key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:a.name, phone:a.phone, email:a.email, notes:$('apNotes').value.trim()||null, account_id:a.id}, {onConflict:'key'});
-      if(error){ $('apSave').disabled = false; flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return; }
-      await reload(); flash('Property added');
+      const r = editAddr==='new'
+        ? await sb.from('addresses').upsert({key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:a.name, phone:a.phone, email:a.email, notes, account_id:a.id}, {onConflict:'key'})
+        : await sb.from('addresses').update({line, postcode:pc, notes}).eq('id', editAddr);
+      if(r.error){ $('apSave').disabled = false; flash('Not saved: ' + (isNetErr(r.error)?'no connection':r.error.message)); return; }
+      editAddr = null; await reload(); flash('Saved');
+    };
+    if($('apDel')) $('apDel').onclick = async ()=>{
+      if(!confirmInline('apDel', 'Press Remove from account again. The address stays in the quote builder’s suggestions.')) return;
+      const r = await sb.from('addresses').update({account_id:null}).eq('id', editAddr);
+      if(r.error){ flash('Not removed: ' + r.error.message); return; }
+      editAddr = null; await reload();
     };
     root().querySelectorAll('[data-pquote]').forEach(b=> b.onclick = ()=> newQuote(detail.props.find(p=>p.id===b.dataset.pquote)||null));
     // communication
@@ -451,6 +560,6 @@ const ACCOUNTS = (()=>{
     if(!$('view-accounts').hidden){ back(); return; }
     cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); }catch(e){}
   }, true);
-  return {onShow, open, accNo, reset:()=>{ list = []; loaded = false; cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); sessionStorage.removeItem('acTab'); }catch(e){} }};
+  return {onShow, open, accNo, pickForQuote, reset:()=>{ list = []; loaded = false; cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); sessionStorage.removeItem('acTab'); }catch(e){} }};
 })();
 if(typeof ME!=='undefined' && ME && !document.getElementById('view-accounts').hidden) ACCOUNTS.onShow();

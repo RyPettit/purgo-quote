@@ -354,8 +354,15 @@ function calcNow(){
     const g = grp('Windows');
     const w = want('wWn', crew);
     const mode = $('wnMode').value, t = $('wnType').value, n = num('wnCount'), st = +$('wnSt').value;
+    const own = $('wnPrice').value==='own';
+    document.querySelectorAll('#sec-wn .wn-b').forEach(x=>x.hidden = own);
+    document.querySelectorAll('#sec-wn .wn-o').forEach(x=>x.hidden = !own);
     let base; const wls = [];
-    if(mode==='type'){
+    if(own){
+      base = num('wnOwn');
+      if(base>0) wls.push(line(g, 'Window clean', base, `Price entered by hand${n?` · ${n} windows`:''}`));
+      $('wnHint').textContent = 'Your own price is used as it is. Add the number of windows so the job time and pure water are planned.';
+    } else if(mode==='type'){
       const std = R['std'+t]; const extra = Math.max(0, n-std);
       base = R['price'+t] + extra*R.perWin;
       wls.push(line(g, `${WIN_NAMES[t]} window clean`, R['price'+t], `Standard ${WIN_NAMES[t].toLowerCase()} up to ${std} windows`));
@@ -366,12 +373,12 @@ function calcNow(){
       wls.push(line(g, `Window clean, ${n} windows`, base, `${n} × ${gbp(R.perWin)}`));
       $('wnHint').textContent = 'Per-window pricing suits commercial frontages and non-standard properties. Property size sets the sills & doors price.';
     }
-    if($('wnSills').checked) wls.push(line(g, 'Sills & doors', R['sill'+t], WIN_NAMES[t]));
-    if($('wnFirst').checked) hide(line(g, 'First clean uplift', (base + ($('wnSills').checked?R['sill'+t]:0))*R.firstClean/100, `+${R.firstClean}% for build-up on first visit`), wls, 'first clean uplift');
+    if(!own && $('wnSills').checked) wls.push(line(g, 'Sills & doors', R['sill'+t], WIN_NAMES[t]));
+    if(!own && $('wnFirst').checked) hide(line(g, 'First clean uplift', (base + ($('wnSills').checked?R['sill'+t]:0))*R.firstClean/100, `+${R.firstClean}% for build-up on first visit`), wls, 'first clean uplift');
     const cons = num('wnCons'); if(cons) line(g, 'Conservatory roof', cons);
-    const litres = n*R.waterPerWin*($('wnSills').checked?1.3:1)*($('wnFirst').checked?1.5:1);
+    const litres = n*R.waterPerWin*(!own && $('wnSills').checked?1.3:1)*(!own && $('wnFirst').checked?1.5:1);
     o.cost.water += litres*R.waterCost;
-    if(n){ o.setupT += R.winSetup/60; task('wn', 'Windows', n*R.winMins*($('wnFirst').checked?1.5:1)/60, w, 3); }
+    if(n){ o.setupT += R.winSetup/60; task('wn', 'Windows', n*R.winMins*(!own && $('wnFirst').checked?1.5:1)/60, w, 3); }
     if(litres > 350) o.warn.push(['w', `About ${Math.round(litres)} L of pure water needed, more than one 350 L tank. Plan a refill at Spotless.`]);
     if(st>=4) o.warn.push(['b','The 30 ft pole reaches 3 storeys. Windows above that need other access.']);
   }
@@ -493,7 +500,8 @@ function calcNow(){
   const ag = grp('Adjustments');
   if(adj) line(ag, adj<0?'Discount':'Adjustment', adj);
   sub += adj;
-  const min = ctype==='com'?R.minCom:R.minRes;
+  // commercial window cleaning has no minimum charge (shop fronts and small commercial cleans are priced as they are)
+  const min = ctype==='com' ? ($('on-wn').checked ? 0 : R.minCom) : R.minRes;
   if(sub>0 && sub<min){ line(ag, 'Minimum charge top-up', min-sub, `Minimum ${ctype==='com'?'commercial':'residential'} job ${gbp(min)}`); sub = min; }
   o.sub = sub;
   o.vat = $('vatOn').checked ? sub*R.vat/100 : 0;
@@ -695,7 +703,7 @@ function restore(s){
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
   if(window.PURGO_MEASURE && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
   renderPw(); renderRf(); renderRfChem();
-  $('email').value = '';
+  $('email').value = ''; $('wnPrice').value = 'builder'; $('wnOwn').value = 0;   // quotes saved before own-price existed used the builder
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   syncSvc(); resolvePc(); render();
 }
@@ -858,7 +866,7 @@ $('copyQ').onclick = async ()=>{
 };
 $('newJob').onclick = ()=>{
   ['cust','addr','pc','phone','email','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
-  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0);
+  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); $('wnPrice').value='builder';
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
@@ -1191,6 +1199,20 @@ async function saveQuote(asNew){
   const o = last || calc();
   if(!$('addr').value.trim() && !normPc($('pc').value)){ flash('Add an address or postcode first'); return; }
   if(!(o.sub>0)){ flash('Nothing priced yet'); return; }
+  // a quote with no account yet: warn if the customer may already have one, before a duplicate is made
+  if(!quoteAccount && navigator.onLine && sb && typeof ACCOUNTS!=='undefined'){
+    const d = {name:$('cust').value.trim(), email:$('email').value.trim(), phone:$('phone').value.trim(), postcode:fmtPc($('pc').value), line:$('addr').value.trim()};
+    $('saveQ').disabled = true;
+    const pick = await ACCOUNTS.pickForQuote(d);
+    $('saveQ').disabled = false;
+    if(pick===null) return;
+    if(pick && pick.id) setQuoteAccount(pick.id, pick.name, pick.account_no);
+    else if(pick==='new'){
+      const {data, error} = await sb.from('accounts').insert({name:d.name||d.line||'New customer', kind:ctype==='com'?'com':'res', phone:d.phone||null, email:d.email.toLowerCase()||null, billing_line:d.line||null, billing_postcode:d.postcode||null, created_by_name:ME.name}).select('id,name,account_no').single();
+      if(error){ flash('Could not open the new account: ' + error.message); return; }
+      setQuoteAccount(data.id, data.name, data.account_no);
+    }
+  }
   if(asNew) makeRef();
   const item = buildRecord(o, refStr); item.queuedAt = new Date().toISOString();
   const btn = $('saveQ'); btn.disabled = true;

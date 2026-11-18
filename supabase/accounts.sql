@@ -3,13 +3,14 @@
 -- contacts and communications all hang off the account; invoices will too.
 -- Safe to re-run.
 
+create extension if not exists pg_trgm with schema extensions;
 create sequence if not exists public.account_no_seq start 1001;
 
 create table if not exists public.accounts (
   id uuid primary key default gen_random_uuid(),
   account_no bigint unique not null default nextval('public.account_no_seq'),
   name text not null,
-  kind text not null default 'res' check (kind in ('res','com','agent')),   -- residential / commercial / managing agent
+  kind text not null default 'res' check (kind in ('res','com')),   -- residential / commercial
   status text not null default 'lead' check (status in ('lead','active','inactive')),
   email text,
   phone text,
@@ -19,7 +20,6 @@ create table if not exists public.accounts (
   tags text[] not null default '{}',
   source text,                 -- how they found us
   squeegee_ref text,           -- customer ref in Squeegee while we run both
-  portfolio_id uuid references public.portfolios(id) on delete set null,
   created_by uuid default auth.uid(),
   created_by_name text,
   created_at timestamptz not null default now(),
@@ -97,7 +97,7 @@ begin
   end if;
   if v is null and p_create and (nm is not null or nullif(trim(coalesce(p_line,'')),'') is not null) then
     insert into accounts (name, kind, email, phone, billing_line, billing_postcode, created_by_name)
-    values (coalesce(nm, trim(p_line)), case when p_kind in ('res','com','agent') then p_kind else 'res' end,
+    values (coalesce(nm, trim(p_line)), case when p_kind = 'com' then 'com' else 'res' end,
             em, nullif(trim(coalesce(p_phone,'')),''), nullif(trim(coalesce(p_line,'')),''), nullif(trim(coalesce(p_postcode,'')),''),
             (select name from profiles where id = auth.uid()))
     returning id into v;
@@ -127,7 +127,8 @@ create trigger quotes_link_account before insert or update on public.quotes for 
 -- saved addresses (properties) attach to the account of the latest quote at that address
 create or replace function public.address_link_account() returns trigger language plpgsql set search_path = public as $$
 begin
-  if new.account_id is null then
+  -- an address taken off an account stays off: only new or never-linked addresses are auto-linked
+  if new.account_id is null and (tg_op = 'INSERT' or old.account_id is null) then
     select q.account_id into new.account_id from quotes q
       where q.account_id is not null and lower(coalesce(q.address,'')) = lower(coalesce(new.line,''))
         and upper(regexp_replace(coalesce(q.postcode,''), '\s', '', 'g')) = upper(regexp_replace(coalesce(new.postcode,''), '\s', '', 'g'))
@@ -161,11 +162,17 @@ end $$;
 grant usage on sequence public.account_no_seq to authenticated;
 
 -- ============ Back-fill: an account for every existing customer ============
--- portfolio clients first (managing agents)
-insert into public.accounts (name, kind, status, email, portfolio_id, created_by_name)
-select coalesce(nullif(p.client,''), p.name), 'agent', case when p.status='accepted' then 'active' else 'lead' end, nullif(lower(p.email),''), p.id, p.created_by_name
-from public.portfolios p
-where not exists (select 1 from public.accounts a where a.portfolio_id = p.id);
+-- portfolio clients first (commercial accounts)
+alter table public.portfolios add column if not exists account_id uuid references public.accounts(id) on delete set null;
+create index if not exists portfolios_account_idx on public.portfolios (account_id);
+do $$ declare p record; v uuid; begin
+  for p in select * from public.portfolios where account_id is null loop
+    insert into public.accounts (name, kind, status, email, created_by_name)
+    values (coalesce(nullif(p.client,''), p.name), 'com', case when p.status='accepted' then 'active' else 'lead' end, nullif(lower(p.email),''), p.created_by_name)
+    returning id into v;
+    update public.portfolios set account_id = v where id = p.id;
+  end loop;
+end $$;
 
 -- then every quote, oldest first, so repeat customers land on one account
 -- (quotes keep their "last changed" date: the touch trigger is paused for the back-fill)
@@ -177,6 +184,42 @@ do $$ declare r record; begin
 end $$;
 alter table public.quotes enable trigger quotes_touch;
 update public.addresses set account_id = null where account_id is null;   -- fires the link trigger
+
+-- ============ Duplicate warning: possible existing accounts for a customer ============
+create or replace function public.account_candidates(p_name text, p_email text, p_phone text, p_postcode text, p_line text)
+returns table (id uuid, account_no bigint, name text, kind text, phone text, email text, place text, reason text)
+language sql stable set search_path = public, extensions as $$
+  with i as (
+    select nullif(lower(trim(coalesce(p_email,''))),'') em,
+           nullif(right(regexp_replace(coalesce(p_phone,''), '\D', '', 'g'), 10),'') ph,
+           nullif(lower(trim(coalesce(p_name,''))),'') nm,
+           nullif(upper(regexp_replace(coalesce(p_postcode,''), '\s', '', 'g')),'') pc,
+           nullif(lower(regexp_replace(trim(coalesce(p_line,'')), '\s+', ' ', 'g')),'') ln
+  ),
+  addr as (
+    select a.id acc, upper(regexp_replace(coalesce(a.billing_postcode,''), '\s', '', 'g')) pc, lower(regexp_replace(trim(coalesce(a.billing_line,'')), '\s+', ' ', 'g')) ln from accounts a
+    union all
+    select d.account_id, upper(regexp_replace(coalesce(d.postcode,''), '\s', '', 'g')), lower(regexp_replace(trim(coalesce(d.line,'')), '\s+', ' ', 'g')) from addresses d where d.account_id is not null
+  ),
+  hits as (
+    select a.id, 1 pri, 'Same email' reason from accounts a, i where i.em is not null and lower(a.email) = i.em
+    union all select c.account_id, 1, 'Same email (contact)' from account_contacts c, i where i.em is not null and lower(c.email) = i.em
+    union all select a.id, 2, 'Same phone number' from accounts a, i where length(i.ph) >= 10 and right(regexp_replace(coalesce(a.phone,''), '\D', '', 'g'), 10) = i.ph
+    union all select c.account_id, 2, 'Same phone number (contact)' from account_contacts c, i where length(i.ph) >= 10 and right(regexp_replace(coalesce(c.phone,''), '\D', '', 'g'), 10) = i.ph
+    union all select d.acc, 3, 'Same address' from addr d, i where i.pc is not null and i.ln is not null and d.pc = i.pc and (d.ln = i.ln or (length(i.ln) > 4 and similarity(d.ln, i.ln) > 0.5))
+    union all select a.id, 4, 'Similar name, same postcode' from accounts a join addr d on d.acc = a.id, i where i.nm is not null and i.pc is not null and d.pc = i.pc and similarity(lower(a.name), i.nm) > 0.3
+    union all select a.id, 5, 'Similar name' from accounts a, i where i.nm is not null and length(i.nm) > 3
+      and (similarity(lower(a.name), i.nm) > 0.55 or lower(a.name) like i.nm || ' %' or i.nm like lower(a.name) || ' %')
+  ),
+  best as (select distinct on (h.id) h.id, h.pri, h.reason from hits h where h.id is not null order by h.id, h.pri)
+  select a.id, a.account_no, a.name, a.kind, a.phone, a.email,
+         concat_ws(', ', nullif(a.billing_line,''), nullif(a.billing_postcode,'')) place, b.reason
+  from best b join accounts a on a.id = b.id
+  where public.is_staff()
+  order by b.pri, a.name
+  limit 6
+$$;
+grant execute on function public.account_candidates(text, text, text, text, text) to authenticated;
 
 -- ============ Merge two accounts (admin only) ============
 create or replace function public.merge_accounts(p_from uuid, p_into uuid) returns void
@@ -193,11 +236,11 @@ begin
   update addresses set account_id = p_into where account_id = p_from;
   update account_contacts set account_id = p_into where account_id = p_from;
   update account_comms set account_id = p_into where account_id = p_from;
+  update portfolios set account_id = p_into where account_id = p_from;
   update accounts t set
     email = coalesce(t.email, f.email), phone = coalesce(t.phone, f.phone),
     billing_line = coalesce(t.billing_line, f.billing_line), billing_postcode = coalesce(t.billing_postcode, f.billing_postcode),
     source = coalesce(t.source, f.source), squeegee_ref = coalesce(t.squeegee_ref, f.squeegee_ref),
-    portfolio_id = coalesce(t.portfolio_id, f.portfolio_id),
     tags = (select coalesce(array_agg(distinct x), '{}') from unnest(t.tags || f.tags) x),
     notes = nullif(concat_ws(E'\n', t.notes, f.notes), ''),
     status = case when 'active' in (t.status, f.status) then 'active' when t.status = 'inactive' and f.status = 'lead' then 'lead' else t.status end
