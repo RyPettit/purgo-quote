@@ -223,7 +223,7 @@ const PORTFOLIO = (()=>{
     if(urlsAt && Date.now()-urlsAt > 5*3600e3){ urlsAt = Date.now(); signAll(true).then(()=>render()); }
     const P = portfolioTotals();
     root().innerHTML = `
-    <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.length} properties · <span id="pfSave">All changes saved</span></p></div>
+    <div class="viewbar pf-noprint"><div><p class="hint" style="margin:0"><a href="#" id="pfBack">← All portfolios</a></p><h2 class="vtitle">${esc(cur.name)}</h2><p class="sub">${esc(cur.client||'')} · ${P.all.filter(x=>!isGroup(x)).length} properties · <span id="pfSave">All changes saved</span></p></div>
       <div class="vb-actions"><div class="seg" id="pfTabs">${[['summary','Summary'],['site','Properties'],['map','Map & routes'],['quote','Customer quote'],['customer','Customer access'],['settings','Settings & import']].map(([k,l])=>`<button type="button" data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div></div></div>
     <div id="pfBody"></div>`;
     $('pfBack').onclick = e=>{ e.preventDefault(); try{ sessionStorage.removeItem('pfCur'); }catch(x){} loadList().then(renderList); };
@@ -273,7 +273,7 @@ const PORTFOLIO = (()=>{
           return `<tr data-id="${s.id}" class="${!incl(s)?'off':''} ${parentOf(s)?'pf-sub':''}">
           <td class="r">${esc(refOf(s))}</td>
           <td>${im&&src(im)?`<img class="pf-th" src="${esc(src(im))}" alt="" loading="lazy">`:'<div class="pf-th"></div>'}</td>
-          <td><b>${esc(s.name||s.address)}</b>${s.name?`<small>${esc(s.address)}</small>`:''}<small>${esc(s.postcode||'')}${d.units?' · '+esc(d.units)+' units':''}</small></td>
+          <td><b>${esc(s.name||s.address)}</b>${s.name&&s.name!==s.address?`<small>${esc(s.address)}</small>`:''}<small>${esc(s.postcode||'')}${d.units?' · '+esc(d.units)+' units':''}</small></td>
           <td>${esc(d.type)||'–'}${d.gutterType?`<small>${esc(d.gutterType)}</small>`:''}</td>
           <td class="r">${esc(d.storeys)||'–'}</td><td class="r"><b>${c.m?c.m.toFixed(0):'–'}</b></td><td class="r">${esc(d.downpipes)||'–'}</td>
           <td><div class="pf-badges">${acc.length?acc.map(a=>`<span class="pf-b ${a[0]==='mewp'||a[0]==='tower'?'bad':'warn'}">${esc(a[1].split(' –')[0].split(' /')[0].split(' (')[0])}</span>`).join(''):'<span class="pf-b ok">None noted</span>'}</div>${d.accessNotes?`<small>${esc(d.accessNotes.slice(0,70))}</small>`:''}</td>
