@@ -32,6 +32,7 @@ create table if not exists public.rounds (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   frequency_weeks int not null default 4 check (frequency_weeks between 1 and 52),
+  monthly boolean not null default true,    -- rounds are done once a month by area
   calendar_id uuid references public.staff_calendars(id) on delete set null,
   start_time time not null default '08:30',
   notes text,
@@ -52,6 +53,7 @@ create table if not exists public.jobs (
   title text,                      -- what's included, e.g. "Front & back, conservatory"
   price numeric not null default 0,
   frequency_weeks int check (frequency_weeks is null or frequency_weeks between 1 and 104),   -- empty = one-off
+  monthly boolean not null default false,   -- every calendar month (window rounds) instead of every N weeks
   next_due date,
   round_id uuid references public.rounds(id) on delete set null,
   round_order int,
@@ -106,6 +108,8 @@ create table if not exists public.gcal_trash (
 );
 
 alter table public.mail_connection add column if not exists scopes text;
+alter table public.jobs add column if not exists monthly boolean not null default false;
+alter table public.rounds add column if not exists monthly boolean not null default true;
 
 drop trigger if exists rounds_touch on public.rounds;
 create trigger rounds_touch before update on public.rounds for each row execute function public.touch_updated_at();
@@ -140,15 +144,16 @@ revoke execute on function public.visit_trash_event() from public, anon, authent
 drop trigger if exists visits_trash on public.visits;
 create trigger visits_trash after delete on public.visits for each row execute function public.visit_trash_event();
 
--- done or skipped: the job's next clean is due one cycle on; a one-off job is finished
+-- done or skipped: the job's next clean is due one cycle on (a month, or N weeks); a one-off job is finished
 create or replace function public.visit_roll_job() returns trigger language plpgsql set search_path = public as $$
-declare j jobs;
+declare j jobs; nxt date;
 begin
   if new.status in ('done','skipped') and (tg_op = 'INSERT' or old.status is distinct from new.status) then
     select * into j from jobs where id = new.job_id;
-    if j.frequency_weeks is not null then
-      if j.next_due is null or j.next_due < new.date + j.frequency_weeks * 7 then
-        update jobs set next_due = new.date + j.frequency_weeks * 7 where id = j.id;
+    if j.monthly or j.frequency_weeks is not null then
+      nxt := case when j.monthly then (new.date + interval '1 month')::date else new.date + j.frequency_weeks * 7 end;
+      if j.next_due is null or j.next_due < nxt then
+        update jobs set next_due = nxt where id = j.id;
       end if;
     elsif new.status = 'done' then
       update jobs set status = 'ended', next_due = null where id = j.id;

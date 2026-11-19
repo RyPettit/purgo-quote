@@ -602,3 +602,5 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
   .jb-v .qacts{grid-column:1/-1;justify-content:flex-start}
   .jb-chips{margin-left:0}
 }
+.jb-dha{margin-left:auto;display:flex;gap:6px}
+.jb-dh .jb-dha .btn{margin-left:0}

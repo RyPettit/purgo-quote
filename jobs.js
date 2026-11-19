@@ -31,9 +31,11 @@ const JOBS = (()=>{
   const hm = t => t ? String(t).slice(0,5) : '';
   const addMin = (t, m) => { const [h, mi] = t.split(':').map(Number); const x = Math.min(h*60+mi+m, 23*60+59); return `${pad(Math.floor(x/60))}:${pad(x%60)}`; };
   const daysBetween = (a, b) => Math.round((pd(b)-pd(a))/864e5);
-  const freqLabel = f => f ? (f===1 ? 'Every week' : `Every ${f} weeks`) : 'One-off';
+  const freqLabel = (f, m) => m ? 'Monthly' : f ? (f===1 ? 'Every week' : `Every ${f} weeks`) : 'One-off';
+  const freqVal = x => x.monthly ? 'm' : (x.frequency_weeks || '');
+  const readFreq = v => v==='m' ? {monthly:true, frequency_weeks:null} : {monthly:false, frequency_weeks:+v||null};
   function dueText(j){
-    if(!j.next_due) return j.status==='ended' ? 'Finished' : 'No date';
+    if(!j.next_due) return j.status==='ended' ? 'Finished' : 'Any time';
     const d = daysBetween(today(), j.next_due);
     return d < 0 ? `${-d} day${d===-1?'':'s'} overdue` : d===0 ? 'Due today' : `Due ${fmtDate(j.next_due)}`;
   }
@@ -41,7 +43,7 @@ const JOBS = (()=>{
   /* ---------- data ---------- */
   let cals = [], rounds = [], jobs = [], booked = new Map(), loaded = false, err = '';
   let sub = 'week', week = monday(today()), calF = '', q = '', showEnded = false, horizon = 14;
-  let visits = [], openRound = null, roundForm = false, sel = new Set(), moving = null;
+  let visits = [], openRound = null, roundForm = false, sel = new Set(), moving = null, addDay = null;
 
   async function loadBase(){
     const [c, r, j, b] = await Promise.all([
@@ -67,7 +69,9 @@ const JOBS = (()=>{
   const calDot = id => { const c = calById(id); return c ? `<i class="jb-dot" style="background:${esc(c.colour||'#888')}" title="${esc(c.name)}"></i>` : ''; };
   const calOpts = (id, blank) => (blank ? `<option value="">${esc(blank)}</option>` : '') + cals.map(c=>`<option value="${c.id}" ${c.id===id?'selected':''}>${esc(c.name)}${c.is_default?' (default)':''}</option>`).join('');
   const roundOpts = id => `<option value="">Not on a round</option>` + rounds.filter(r=>r.active || r.id===id).map(r=>`<option value="${r.id}" ${r.id===id?'selected':''}>${esc(r.name)}</option>`).join('');
-  const freqOpts = f => `<option value="" ${!f?'selected':''}>One-off</option>` + [...new Set([...FREQS, ...(f?[f]:[])])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${+f===n?'selected':''}>${freqLabel(n)}</option>`).join('');
+  const freqOpts = (x, noOne) => { const v = String(freqVal(x)), f = x.frequency_weeks;
+    return (noOne ? '' : `<option value="" ${v===''?'selected':''}>One-off (ad hoc)</option>`) + `<option value="m" ${v==='m'?'selected':''}>Monthly</option>` +
+      [...new Set([...FREQS, ...(f?[f]:[])])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${v===String(n)?'selected':''}>${freqLabel(n)}</option>`).join(''); };
   const where = j => [j.line, j.postcode].filter(Boolean).join(', ');
 
   // tell the server to copy changed bookings to Google Calendar (quietly; the server also does it every couple of minutes)
@@ -152,12 +156,33 @@ const JOBS = (()=>{
       <p class="hint">${vs.length} booking${vs.length===1?'':'s'} · ${gbp(tot)}</p>
       ${days.map(d=>{ const dv = vs.filter(v=>v.date===d); const isT = d===today();
         return `<div class="jb-day ${isT?'today':''}"><div class="jb-dh"><b>${fmtDay(d)}${isT?' · Today':''}</b><small>${dv.length ? `${dv.length} · ${gbp(dv.filter(v=>v.status!=='skipped').reduce((s,v)=>s+(+(v.price ?? (v.jobs||{}).price)||0),0))}` : ''}</small>
-          ${dv.some(v=>v.status==='booked') && d<=today() ? `<button class="btn sm" type="button" data-daydone="${d}">All done</button>` : ''}</div>
+          <span class="jb-dha">${dv.some(v=>v.status==='booked') && d<=today() ? `<button class="btn sm" type="button" data-daydone="${d}">All done</button>` : ''}${d>=today() ? `<button class="btn sm" type="button" data-addday="${d}">+ Add</button>` : ''}</span></div>
+          ${addDay===d ? addForm(d, dv) : ''}
           ${dv.length ? dv.map(visitRow).join('') : '<p class="hint jb-none">Nothing booked</p>'}</div>`; }).join('')}
     </section>`;
   }
+  // fill a day: pick any unbooked job (ad hoc first, then anything due soonest)
+  function addForm(d, dv){
+    const free = jobs.filter(j=>j.status==='active' && !booked.has(j.id))
+      .sort((a,b)=> (!!a.round_id - !!b.round_id) || (a.next_due||'0000').localeCompare(b.next_due||'0000'));
+    const last = dv.filter(v=>v.start_time && v.status!=='cancelled').sort((a,b)=>a.start_time.localeCompare(b.start_time)).pop();
+    const t = last ? addMin(hm(last.start_time), (last.duration_min||30) + GAP) : '08:30';
+    return `<div class="fields jb-move">
+      <label class="f wide">Job to add<select id="adJob"><option value="">${free.length ? 'Choose a job…' : 'Nothing waiting to be booked'}</option>${free.map(j=>`<option value="${j.id}">${esc((j.accounts||{}).name||'')} – ${esc(SVC_SHORT[j.service])} · ${esc(j.postcode||j.line||'')} · ${gbp(+j.price||0)}${j.round_id?' (round)':''} · ${esc(dueText(j))}</option>`).join('')}</select></label>
+      <label class="f">Time<input type="time" id="adTime" value="${t}"></label>
+      <label class="f">Calendar<select id="adCal">${calOpts((defCal()||{}).id, 'The job\'s own calendar')}</select></label>
+      <div class="vb-actions wide"><button class="btn sm" type="button" id="adCancel">Close</button><button class="btn sm pri" type="button" id="adGo">Add to ${esc(fmtDay(d))}</button></div></div>`;
+  }
   function wireWeek(){
-    const go = async w=>{ week = w; moving = null; try{ await loadWeek(); }catch(e){ flash(e.message); } render(); };
+    root().querySelectorAll('[data-addday]').forEach(b=> b.onclick = ()=>{ addDay = addDay===b.dataset.addday ? null : b.dataset.addday; moving = null; render(); });
+    if($('adGo')){
+      $('adCancel').onclick = ()=>{ addDay = null; render(); };
+      $('adGo').onclick = async ()=>{ const j = jobs.find(x=>x.id===$('adJob').value); if(!j){ flash('Choose a job'); return; }
+        $('adGo').disabled = true;
+        try{ await book([j], addDay, $('adCal').value, $('adTime').value); flash(`Added to ${fmtDay(addDay)}`); }catch(e){ flash('Could not book: ' + e.message); }
+        addDay = null; await loadWeek(); await loadBase(); render(); };
+    }
+    const go = async w=>{ week = w; moving = null; addDay = null; try{ await loadWeek(); }catch(e){ flash(e.message); } render(); };
     $('wkPrev').onclick = ()=> go(addDays(week,-7)); $('wkNext').onclick = ()=> go(addDays(week,7)); $('wkToday').onclick = ()=> go(monday(today()));
     root().querySelectorAll('[data-calf]').forEach(b=> b.onclick = ()=>{ calF = b.dataset.calf; render(); });
     wireVisitActions(async ()=>{ await loadWeek(); await loadBase(); render(); });
@@ -185,25 +210,25 @@ const JOBS = (()=>{
   /* ---------- To book (due jobs with nothing booked) ---------- */
   function dueJobs(){
     const lim = addDays(today(), horizon);
-    return jobs.filter(j=>j.status==='active' && j.next_due && j.next_due <= lim && !booked.has(j.id));
+    return jobs.filter(j=>j.status==='active' && (!j.next_due || j.next_due <= lim) && !booked.has(j.id));
   }
   function jobLine(j, check){
     const r = rounds.find(x=>x.id===j.round_id);
     const od = j.next_due && j.next_due < today();
     return `<label class="jb-j ${check && sel.has(j.id)?'on':''}">${check ? `<input type="checkbox" data-sel="${j.id}" ${sel.has(j.id)?'checked':''}>` : ''}
-      <span class="m"><b>${esc((j.accounts||{}).name||'')}</b><small>${esc(SVC_SHORT[j.service])}${j.title?' · '+esc(j.title):''} · ${esc(where(j))}</small><small>${freqLabel(j.frequency_weeks)}${r?' · '+esc(r.name):''} · ${calDot(j.calendar_id)}${esc(calName(j.calendar_id)||calName((defCal()||{}).id))}</small></span>
+      <span class="m"><b>${esc((j.accounts||{}).name||'')}</b><small>${esc(SVC_SHORT[j.service])}${j.title?' · '+esc(j.title):''} · ${esc(where(j))}</small><small>${freqLabel(j.frequency_weeks, j.monthly)}${r?' · '+esc(r.name):''} · ${calDot(j.calendar_id)}${esc(calName(j.calendar_id)||calName((defCal()||{}).id))}</small></span>
       <span class="v">${gbp(+j.price||0)}<small class="${od?'jb-od':''}">${dueText(j)}</small></span></label>`;
   }
   function viewDue(){
-    const due = dueJobs().sort((a,b)=> a.next_due.localeCompare(b.next_due));
+    const due = dueJobs().sort((a,b)=> (a.next_due||'9999').localeCompare(b.next_due||'9999'));
     const groups = [];
     rounds.forEach(r=>{ const l = due.filter(j=>j.round_id===r.id).sort((a,b)=>(a.round_order??1e9)-(b.round_order??1e9)); if(l.length) groups.push([r.name, l, r]); });
-    const loose = due.filter(j=>!j.round_id || !rounds.some(r=>r.id===j.round_id)); if(loose.length) groups.push(['Not on a round', loose, null]);
+    const loose = due.filter(j=>!j.round_id || !rounds.some(r=>r.id===j.round_id)); if(loose.length) groups.push(['Ad hoc jobs (not on a round)', loose, null]);
     const selJobs = due.filter(j=>sel.has(j.id));
     return `<section class="card">
-      <div class="jb-weekbar"><span>Due in the next</span><select id="dueH">${[7,14,21,28,42,56].map(n=>`<option value="${n}" ${horizon===n?'selected':''}>${n} days</option>`).join('')}</select><span class="hint">(and anything overdue) with nothing booked yet</span></div>
+      <div class="jb-weekbar"><span>Due in the next</span><select id="dueH">${[7,14,21,28,42,56].map(n=>`<option value="${n}" ${horizon===n?'selected':''}>${n} days</option>`).join('')}</select><span class="hint">(plus overdue, and ad hoc jobs with no date) with nothing booked yet</span></div>
       ${groups.length ? groups.map(([name, l, r])=>`<div class="jb-grp"><div class="jb-dh"><b>${esc(name)}</b><small>${l.length} · ${gbp(l.reduce((s,j)=>s+(+j.price||0),0))}</small><button class="linkbtn" type="button" data-selall="${r?r.id:'none'}">Select all</button></div>${l.map(j=>jobLine(j, true)).join('')}</div>`).join('')
-        : `<p class="hint">Nothing to book. Jobs show here when they're coming due and haven't got a booking.</p>`}
+        : `<p class="hint">Nothing to book. Jobs show here when they're coming due, or straight away for ad hoc jobs, until they're booked.</p>`}
     </section>
     ${selJobs.length ? `<section class="card jb-bookbar"><h2>Book ${selJobs.length} job${selJobs.length===1?'':'s'} · ${gbp(selJobs.reduce((s,j)=>s+(+j.price||0),0))}</h2>
       <div class="fields">
@@ -237,8 +262,8 @@ const JOBS = (()=>{
   }
   function roundForm_(r){
     return `<div class="fields">
-      <label class="f wide">Round name<input id="rdName" value="${esc(r.name||'')}" placeholder="e.g. Hessle – Tuesday, Anlaby week 1"></label>
-      <label class="f">How often<select id="rdFreq">${FREQS.map(n=>`<option value="${n}" ${(r.frequency_weeks||4)===n?'selected':''}>${freqLabel(n)}</option>`).join('')}</select></label>
+      <label class="f wide">Area<input id="rdName" value="${esc(r.name||'')}" placeholder="e.g. Hessle, Anlaby, Cottingham"></label>
+      <label class="f">How often<select id="rdFreq">${freqOpts(r.id ? r : {monthly:true}, true)}</select></label>
       <label class="f">Calendar<select id="rdCal">${calOpts(r.calendar_id || (defCal()||{}).id)}</select></label>
       <label class="f">Start time<input type="time" id="rdTime" value="${hm(r.start_time)||'08:30'}"></label>
       <label class="f wide">Notes<input id="rdNotes" value="${esc(r.notes||'')}" placeholder="Area, day, where to park the van…"></label>
@@ -248,10 +273,10 @@ const JOBS = (()=>{
     if(openRound) return viewRound(rounds.find(r=>r.id===openRound));
     const act = rounds.filter(r=>r.active), old = rounds.filter(r=>!r.active);
     return `<section class="card"><div class="svc-head"><h2>Window cleaning rounds</h2>${roundForm ? '' : `<button class="btn sm pri" type="button" id="rdNew">New round</button>`}</div>
-      <p class="hint" style="margin-top:6px">A round is a run of window cleans done in order on one day. Add customers' window cleaning jobs to a round, put them in driving order, then book the whole round in one go.</p>
+      <p class="hint" style="margin-top:6px">Window cleaning is done by area, once a month for each. Make a round for each area, add the customers' window cleaning jobs to it in driving order, then book the whole area in one go each month. Everything else is ad hoc: book it from To book, or press + Add on a day in the Diary to fill it.</p>
       ${roundForm ? `<div class="ac-cform" style="padding:10px 0">${roundForm_({})}<div class="vb-actions"><button class="btn sm" type="button" id="rdCancel">Cancel</button><button class="btn sm pri" type="button" id="rdSave">Create round</button></div></div>` : ''}
       <div class="qlist" style="margin-top:8px">${act.map(r=>{ const s = roundStats(r);
-        return `<div class="qitem"><div class="m"><b>${esc(r.name)}</b><small>${freqLabel(r.frequency_weeks)} · ${calDot(r.calendar_id)}${esc(calName(r.calendar_id))} · from ${hm(r.start_time)}</small><small>${s.n} customer${s.n===1?'':'s'} · ${s.next ? 'next due '+fmtDate(s.next) : 'no dates yet'}${s.due?` · <b>${s.due} due this week</b>`:''}</small></div>
+        return `<div class="qitem"><div class="m"><b>${esc(r.name)}</b><small>${freqLabel(r.frequency_weeks, r.monthly)} · ${calDot(r.calendar_id)}${esc(calName(r.calendar_id))} · from ${hm(r.start_time)}</small><small>${s.n} customer${s.n===1?'':'s'} · ${s.next ? 'next due '+fmtDate(s.next) : 'no dates yet'}${s.due?` · <b>${s.due} due this week</b>`:''}</small></div>
           <div class="v">${gbp(s.val)}<small style="display:block;color:var(--muted);font-size:.72rem">per round</small></div>
           <div class="qacts"><button class="btn sm" type="button" data-rdopen="${r.id}">Open</button></div></div>`; }).join('') || (roundForm ? '' : '<p class="hint">No rounds yet.</p>')}
       ${old.length ? `<details><summary class="hint">Stopped rounds (${old.length})</summary>${old.map(r=>`<div class="qitem"><div class="m"><b>${esc(r.name)}</b></div><div class="qacts"><button class="btn sm" type="button" data-rdopen="${r.id}">Open</button></div></div>`).join('')}</details>` : ''}
@@ -271,7 +296,7 @@ const JOBS = (()=>{
     <section class="card"><h2>Book this round</h2>
       <div class="fields">
         <label class="f">Date<input type="date" id="rbDate" value="${s.next && s.next > today() ? s.next : addDays(today(),1)}"></label>
-        <label class="f">Who's booked<select id="rbWhich"><option value="due">Due within a week of that date</option><option value="all">Everyone on the round</option></select></label>
+        <label class="f">Who's booked<select id="rbWhich"><option value="all">Everyone in the area</option><option value="due">Only those due within a week of that date</option></select></label>
         <label class="f">Start time<input type="time" id="rbTime" value="${hm(r.start_time)||'08:30'}"></label>
       </div>
       <p class="hint" id="rbInfo"></p>
@@ -287,7 +312,7 @@ const JOBS = (()=>{
   async function saveOrder(l){
     for(let i=0;i<l.length;i++){ if(l[i].round_order!==i+1){ const {error} = await sb.from('jobs').update({round_order:i+1}).eq('id', l[i].id); if(error) throw error; l[i].round_order = i+1; } }
   }
-  function roundVals(){ return {name:$('rdName').value.trim(), frequency_weeks:+$('rdFreq').value, calendar_id:$('rdCal').value||null, start_time:$('rdTime').value||'08:30', notes:$('rdNotes').value.trim()||null}; }
+  function roundVals(){ const f = readFreq($('rdFreq').value); return {name:$('rdName').value.trim(), monthly:f.monthly, frequency_weeks:f.frequency_weeks||4, calendar_id:$('rdCal').value||null, start_time:$('rdTime').value||'08:30', notes:$('rdNotes').value.trim()||null}; }
   function wireRounds(){
     if(!openRound){
       if($('rdNew')) $('rdNew').onclick = ()=>{ roundForm = true; render(); };
@@ -304,7 +329,7 @@ const JOBS = (()=>{
     $('rdUpd').onclick = async ()=>{ const v = roundVals(); if(!v.name){ flash('Give the round a name'); return; }
       const {error} = await sb.from('rounds').update(v).eq('id', r.id); if(error){ flash(error.message); return; }
       // jobs on the round follow its frequency and calendar
-      const {error:e2} = await sb.from('jobs').update({frequency_weeks:v.frequency_weeks, calendar_id:v.calendar_id}).eq('round_id', r.id);
+      const {error:e2} = await sb.from('jobs').update({monthly:v.monthly, frequency_weeks:v.monthly?null:v.frequency_weeks, calendar_id:v.calendar_id}).eq('round_id', r.id);
       if(e2) flash(e2.message); else flash('Round saved');
       await loadBase(); render(); };
     $('rdStop').onclick = async ()=>{ const {error} = await sb.from('rounds').update({active:!r.active}).eq('id', r.id); if(error) flash(error.message); await loadBase(); render(); };
@@ -323,7 +348,7 @@ const JOBS = (()=>{
       try{ await saveOrder(l); }catch(e){ flash(e.message); } render(); });
     root().querySelectorAll('[data-rdrm]').forEach(b=> b.onclick = async ()=>{ const {error} = await sb.from('jobs').update({round_id:null, round_order:null}).eq('id', b.dataset.rdrm); if(error) flash(error.message); await loadBase(); render(); });
     $('rdAdd').onchange = async e=>{ const id = e.target.value; if(!id) return;
-      const {error} = await sb.from('jobs').update({round_id:r.id, round_order:l.length+1, frequency_weeks:r.frequency_weeks, calendar_id:r.calendar_id}).eq('id', id);
+      const {error} = await sb.from('jobs').update({round_id:r.id, round_order:l.length+1, monthly:r.monthly, frequency_weeks:r.monthly?null:r.frequency_weeks, calendar_id:r.calendar_id}).eq('id', id);
       if(error) flash(error.message); await loadBase(); render(); };
   }
 
@@ -338,7 +363,7 @@ const JOBS = (()=>{
       <p class="hint">Add jobs from the customer's account (Accounts → customer → Jobs).</p>
       <div class="qlist">${l.map(j=>`<button type="button" class="ac-row" data-openacc="${j.account_id}">
         <span class="ac-n"><b>${esc((j.accounts||{}).name||'')}</b><small>JB-${j.job_no} · ${esc(SVC_SHORT[j.service])} · ${esc(where(j))}</small></span>
-        <span class="ac-c"><small>${freqLabel(j.frequency_weeks)}</small><small>${calDot(j.calendar_id)}${esc(calName(j.calendar_id))}${j.round_id?' · '+esc((rounds.find(r=>r.id===j.round_id)||{}).name||''):''}</small></span>
+        <span class="ac-c"><small>${freqLabel(j.frequency_weeks, j.monthly)}</small><small>${calDot(j.calendar_id)}${esc(calName(j.calendar_id))}${j.round_id?' · '+esc((rounds.find(r=>r.id===j.round_id)||{}).name||''):''}</small></span>
         <span class="ac-q"><small>${gbp(+j.price||0)}</small><small>${dueText(j)}</small></span>
         <span class="pill ${j.status==='active'?'accepted':j.status==='paused'?'sent':'draft'}">${j.status==='active'?'Active':j.status==='paused'?'Paused':'Finished'}</span></button>`).join('') || '<p class="hint">No jobs yet.</p>'}</div></section>`;
   }
@@ -377,7 +402,7 @@ const JOBS = (()=>{
       <label class="f">Service<select id="jfSvc">${Object.entries(SVC).map(([k,v])=>`<option value="${k}" ${(j.service||'windows')===k?'selected':''}>${v}</option>`).join('')}</select></label>
       <label class="f">Price (£)<input id="jfPrice" type="number" step="0.01" min="0" inputmode="decimal" value="${j.price!=null?+j.price:''}"></label>
       <label class="f wide">What's included<input id="jfTitle" value="${esc(j.title||'')}" placeholder="e.g. Front & back, conservatory, frames every 3rd clean"></label>
-      <label class="f">How often<select id="jfFreq">${freqOpts(j.frequency_weeks)}</select></label>
+      <label class="f">How often<select id="jfFreq">${freqOpts(j)}</select></label>
       <label class="f">Next due<input id="jfDue" type="date" value="${j.next_due||''}"></label>
       <label class="f">Round<select id="jfRound">${roundOpts(j.round_id)}</select></label>
       <label class="f">Calendar<select id="jfCal">${calOpts(j.calendar_id || (defCal()||{}).id)}</select></label>
@@ -403,7 +428,7 @@ const JOBS = (()=>{
       <div class="qlist" style="margin-top:8px">
       ${acc.editing==='new' ? jobForm(d, acc.prefill || {}) : ''}
       ${J.jobs.map(j=> acc.editing===j.id ? jobForm(d, j) : `<div class="qitem jb-acj ${j.status}"><div class="m"><b>${esc(SVC[j.service])}${j.title?` <span class="hint">· ${esc(j.title)}</span>`:''}</b><small>JB-${j.job_no} · ${esc(where(j)||'no address')}</small>
-          <small>${freqLabel(j.frequency_weeks)}${j.round_id?' · '+esc((rounds.find(r=>r.id===j.round_id)||{}).name||'round'):''} · ${calDot(j.calendar_id)}${esc(calName(j.calendar_id))} · <b>${j.status==='active'?dueText(j):j.status==='paused'?'Paused':'Finished'}</b></small>${j.notes?`<small>Access: ${esc(j.notes)}</small>`:''}</div>
+          <small>${freqLabel(j.frequency_weeks, j.monthly)}${j.round_id?' · '+esc((rounds.find(r=>r.id===j.round_id)||{}).name||'round'):''} · ${calDot(j.calendar_id)}${esc(calName(j.calendar_id))} · <b>${j.status==='active'?dueText(j):j.status==='paused'?'Paused':'Finished'}</b></small>${j.notes?`<small>Access: ${esc(j.notes)}</small>`:''}</div>
           <div class="v">${gbp(+j.price||0)}</div>
           <div class="qacts">${j.status==='active' ? `<button class="btn sm pri" type="button" data-jbook="${j.id}">Book</button>` : ''}<button class="btn sm" type="button" data-jedit="${j.id}">Edit</button></div>
           ${acc.bookFor===j.id ? `<div class="fields jb-move wide"><label class="f">Date<input type="date" id="jbDate" value="${j.next_due && j.next_due>today() ? j.next_due : addDays(today(),1)}"></label><label class="f">Time<input type="time" id="jbTime"></label><label class="f">Calendar<select id="jbCal">${calOpts(j.calendar_id || (defCal()||{}).id)}</select></label>
@@ -428,13 +453,13 @@ const JOBS = (()=>{
         loaded = false; await again(); };
     }
     if($('jfAddr')) $('jfAddr').onchange = e=>{ const p = (d.props||[]).find(x=>x.id===e.target.value); if(p){ $('jfLine').value = p.line||''; $('jfPc').value = p.postcode||''; } };
-    if($('jfRound')) $('jfRound').onchange = e=>{ const r = rounds.find(x=>x.id===e.target.value); if(r){ $('jfFreq').value = String(r.frequency_weeks); if(r.calendar_id) $('jfCal').value = r.calendar_id; if($('jfSvc').value!=='windows') $('jfSvc').value = 'windows'; } };
+    if($('jfRound')) $('jfRound').onchange = e=>{ const r = rounds.find(x=>x.id===e.target.value); if(r){ $('jfFreq').value = r.monthly ? 'm' : String(r.frequency_weeks); if(r.calendar_id) $('jfCal').value = r.calendar_id; if($('jfSvc').value!=='windows') $('jfSvc').value = 'windows'; } };
     if($('jfSave')){
       $('jfCancel').onclick = ()=>{ acc.editing = null; acc.prefill = null; again(true); };
       $('jfSave').onclick = async ()=>{
         const id = acc.editing, old = J.jobs.find(x=>x.id===id) || {};
         const v = {account_id:d.acc.id, address_id:($('jfAddr')||{}).value||null, line:$('jfLine').value.trim()||null, postcode:fmtPc($('jfPc').value)||null,
-          service:$('jfSvc').value, title:$('jfTitle').value.trim()||null, price:+$('jfPrice').value||0, frequency_weeks:+$('jfFreq').value||null,
+          service:$('jfSvc').value, title:$('jfTitle').value.trim()||null, price:+$('jfPrice').value||0, ...readFreq($('jfFreq').value),
           next_due:$('jfDue').value||null, round_id:$('jfRound').value||null, calendar_id:$('jfCal').value||null, duration_min:Math.max(5, +$('jfDur').value||30), notes:$('jfNotes').value.trim()||null};
         if($('jfStatus')) v.status = $('jfStatus').value;
         if(!v.line && !v.postcode){ flash('Add the address for this job'); return; }
@@ -445,7 +470,7 @@ const JOBS = (()=>{
         $('jfSave').disabled = true;
         const r = id==='new' ? await sb.from('jobs').insert(v) : await sb.from('jobs').update(v).eq('id', id);
         if(r.error){ flash('Could not save: ' + r.error.message); $('jfSave').disabled = false; return; }
-        flash(id==='new' ? (v.next_due ? 'Job added – it\'ll show in Jobs → To book when it\'s due' : 'Job added') : 'Job saved');
+        flash(id==='new' ? (v.round_id ? 'Job added to the round' : 'Job added – it\'s in Jobs → To book until it\'s booked') : 'Job saved');
         acc.editing = null; acc.prefill = null; loaded = false; await again();
       };
       if($('jfDel')) $('jfDel').onclick = async ()=>{ if(!confirmInline('jfd', 'Press again to delete this job and its bookings (history included). To keep the history, set it to Finished instead.')) return;
