@@ -136,6 +136,7 @@ begin
   end if;
   return old;
 end $$;
+revoke execute on function public.visit_trash_event() from public, anon, authenticated;
 drop trigger if exists visits_trash on public.visits;
 create trigger visits_trash after delete on public.visits for each row execute function public.visit_trash_event();
 
