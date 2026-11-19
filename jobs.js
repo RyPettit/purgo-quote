@@ -16,7 +16,19 @@ const JOBS = (()=>{
   const SVC_SHORT = {windows:'Windows', gutters:'Gutters', roof:'Roof', pressure:'Pressure wash', other:'Other'};
   const VST = {booked:'Booked', done:'Done', skipped:'Skipped', cancelled:'Cancelled'};
   const FREQS = [1,2,3,4,5,6,8,10,12,13,16,26,52];
-  const GAP = 10;   // minutes' travel between jobs when booking a run of them
+  const GAP = 10;   // minutes allowed between jobs when a postcode can't be found
+  // Drive time between two jobs, estimated from their postcodes (the Portal's built-in postcode list,
+  // the road factor and average speed from Admin → rates) plus a few minutes to park and unload.
+  function drive(a, b){
+    const pa = normPc((a && a.postcode) || ''), pb = normPc((b && b.postcode) || '');
+    if(pa && pa===pb) return {min:2, mi:0};
+    const la = pa && typeof lookupPc==='function' ? lookupPc(pa) : null, lb = pb && typeof lookupPc==='function' ? lookupPc(pb) : null;
+    if(!la || !lb) return {min:GAP, mi:null};
+    const mi = haversine(la.lat, la.lng, lb.lat, lb.lng) * ((typeof R!=='undefined' && R.roadFactor) || 1.3);
+    const mph = (typeof R!=='undefined' && R.avgMph) || 28;
+    return {min: Math.max(5, Math.ceil((mi/mph*60 + 3)/5)*5), mi: Math.round(mi*10)/10};
+  }
+  const driveTxt = d => d.mi===null ? `${d.min} min allowed (postcode not found)` : d.mi===0 ? 'Same postcode' : `≈ ${d.min} min drive · ${d.mi} mi`;
   const root = () => $('view-jobs');
 
   /* ---------- dates ---------- */
@@ -30,6 +42,7 @@ const JOBS = (()=>{
   const fmtDate = s => s ? pd(s).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) : '';
   const hm = t => t ? String(t).slice(0,5) : '';
   const addMin = (t, m) => { const [h, mi] = t.split(':').map(Number); const x = Math.min(h*60+mi+m, 23*60+59); return `${pad(Math.floor(x/60))}:${pad(x%60)}`; };
+  const up5 = t => { const [h,m] = t.split(':').map(Number); const x = Math.min(Math.ceil((h*60+m)/5)*5, 23*60+55); return `${pad(Math.floor(x/60))}:${pad(x%60)}`; };
   const daysBetween = (a, b) => Math.round((pd(b)-pd(a))/864e5);
   const freqLabel = (f, m) => m ? 'Monthly' : f ? (f===1 ? 'Every week' : `Every ${f} weeks`) : 'One-off';
   const freqVal = x => x.monthly ? 'm' : (x.frequency_weeks || '');
@@ -43,7 +56,7 @@ const JOBS = (()=>{
   /* ---------- data ---------- */
   let cals = [], rounds = [], jobs = [], booked = new Map(), loaded = false, err = '';
   let sub = 'week', week = monday(today()), calF = '', q = '', showEnded = false, horizon = 14;
-  let visits = [], openRound = null, roundForm = false, sel = new Set(), moving = null, addDay = null;
+  let visits = [], openRound = null, roundForm = false, sel = new Set(), moving = null, addDay = null, addLast = null;
 
   async function loadBase(){
     const [c, r, j, b] = await Promise.all([
@@ -84,9 +97,9 @@ const JOBS = (()=>{
     let t = start || null;
     const rows = list.map(j=>{
       const r = {job_id:j.id, account_id:j.account_id, date, start_time:t, duration_min:j.duration_min||30, calendar_id:calId || j.calendar_id || (defCal()||{}).id || null, price:j.price, created_by_name:ME.name};
-      if(t) t = addMin(t, (j.duration_min||30) + GAP);
       return r;
     });
+    if(t) for(let i=1;i<rows.length;i++) rows[i].start_time = up5(addMin(rows[i-1].start_time, (list[i-1].duration_min||30) + drive(list[i-1], list[i]).min));
     const {error} = await sb.from('visits').insert(rows);
     if(error) throw error;
     kick();
@@ -146,6 +159,30 @@ const JOBS = (()=>{
         <div class="vb-actions wide"><button class="btn sm del" type="button" id="mvDel">Cancel booking</button><button class="btn sm" type="button" id="mvCancel">Close</button><button class="btn sm pri" type="button" id="mvSave">Save</button></div></div>` : ''}
     </div>`;
   }
+  // the day's bookings with the drive between each pair of timed jobs (and a warning if the gap is too short)
+  const minsOf = t => { const [h,m] = hm(t).split(':').map(Number); return h*60+m; };
+  function dayRows(dv){
+    let out = '', prev = null;
+    for(const v of dv){
+      if(prev && prev.start_time && v.start_time){
+        const d = drive(prev.jobs, v.jobs), gap = minsOf(v.start_time) - (minsOf(prev.start_time) + (prev.duration_min||30));
+        out += `<div class="jb-drive ${gap < d.min ? 'short' : ''}">🚐 ${esc(driveTxt(d))}${gap < d.min ? ` · only ${Math.max(gap,0)} min between jobs` : ''}</div>`;
+      }
+      out += visitRow(v); prev = v;
+    }
+    return out;
+  }
+  // re-space a day's bookings: same order and first start time, each job's length plus the drive to the next
+  async function retimeDay(d){
+    const dv = visits.filter(v=>v.date===d && v.start_time && v.status!=='cancelled' && (!calF || v.calendar_id===calF)).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+    let changed = 0;
+    for(let i=1;i<dv.length;i++){
+      const p = dv[i-1], v = dv[i];
+      const want = up5(addMin(hm(p.start_time), (p.duration_min||30) + drive(p.jobs, v.jobs).min));
+      if(v.status==='booked' && hm(v.start_time)!==want){ await setVisit(v.id, {start_time:want}); v.start_time = want; changed++; }
+    }
+    return changed;
+  }
   function viewWeek(){
     const days = [...Array(7)].map((_,i)=>addDays(week, i));
     const vs = visits.filter(v=>!calF || v.calendar_id===calF);
@@ -156,9 +193,9 @@ const JOBS = (()=>{
       <p class="hint">${vs.length} booking${vs.length===1?'':'s'} · ${gbp(tot)}</p>
       ${days.map(d=>{ const dv = vs.filter(v=>v.date===d); const isT = d===today();
         return `<div class="jb-day ${isT?'today':''}"><div class="jb-dh"><b>${fmtDay(d)}${isT?' · Today':''}</b><small>${dv.length ? `${dv.length} · ${gbp(dv.filter(v=>v.status!=='skipped').reduce((s,v)=>s+(+(v.price ?? (v.jobs||{}).price)||0),0))}` : ''}</small>
-          <span class="jb-dha">${dv.some(v=>v.status==='booked') && d<=today() ? `<button class="btn sm" type="button" data-daydone="${d}">All done</button>` : ''}${d>=today() ? `<button class="btn sm" type="button" data-addday="${d}">+ Add</button>` : ''}</span></div>
+          <span class="jb-dha">${dv.filter(v=>v.start_time && v.status==='booked').length>1 ? `<button class="btn sm" type="button" data-retime="${d}" title="Space the day out with drive times">Re-time</button>` : ''}${dv.some(v=>v.status==='booked') && d<=today() ? `<button class="btn sm" type="button" data-daydone="${d}">All done</button>` : ''}${d>=today() ? `<button class="btn sm" type="button" data-addday="${d}">+ Add</button>` : ''}</span></div>
           ${addDay===d ? addForm(d, dv) : ''}
-          ${dv.length ? dv.map(visitRow).join('') : '<p class="hint jb-none">Nothing booked</p>'}</div>`; }).join('')}
+          ${dv.length ? dayRows(dv) : '<p class="hint jb-none">Nothing booked</p>'}</div>`; }).join('')}
     </section>`;
   }
   // fill a day: pick any unbooked job (ad hoc first, then anything due soonest)
@@ -166,17 +203,23 @@ const JOBS = (()=>{
     const free = jobs.filter(j=>j.status==='active' && !booked.has(j.id))
       .sort((a,b)=> (!!a.round_id - !!b.round_id) || (a.next_due||'0000').localeCompare(b.next_due||'0000'));
     const last = dv.filter(v=>v.start_time && v.status!=='cancelled').sort((a,b)=>a.start_time.localeCompare(b.start_time)).pop();
-    const t = last ? addMin(hm(last.start_time), (last.duration_min||30) + GAP) : '08:30';
+    const t = last ? up5(addMin(hm(last.start_time), (last.duration_min||30) + GAP)) : '08:30';
+    addLast = last || null;
     return `<div class="fields jb-move">
       <label class="f wide">Job to add<select id="adJob"><option value="">${free.length ? 'Choose a job…' : 'Nothing waiting to be booked'}</option>${free.map(j=>`<option value="${j.id}">${esc((j.accounts||{}).name||'')} – ${esc(SVC_SHORT[j.service])} · ${esc(j.postcode||j.line||'')} · ${gbp(+j.price||0)}${j.round_id?' (round)':''} · ${esc(dueText(j))}</option>`).join('')}</select></label>
-      <label class="f">Time<input type="time" id="adTime" value="${t}"></label>
+      <label class="f">Time<input type="time" id="adTime" value="${t}"><small class="hint" id="adDrive">${last ? 'Straight after the last job, plus the drive' : ''}</small></label>
       <label class="f">Calendar<select id="adCal">${calOpts((defCal()||{}).id, 'The job\'s own calendar')}</select></label>
       <div class="vb-actions wide"><button class="btn sm" type="button" id="adCancel">Close</button><button class="btn sm pri" type="button" id="adGo">Add to ${esc(fmtDay(d))}</button></div></div>`;
   }
   function wireWeek(){
+    root().querySelectorAll('[data-retime]').forEach(b=> b.onclick = async ()=>{ b.disabled = true;
+      try{ const n = await retimeDay(b.dataset.retime); flash(n ? `${n} booking${n===1?'':'s'} re-timed with drive times` : 'Times already allow for driving'); }catch(e){ flash(e.message); }
+      await loadWeek(); render(); });
     root().querySelectorAll('[data-addday]').forEach(b=> b.onclick = ()=>{ addDay = addDay===b.dataset.addday ? null : b.dataset.addday; moving = null; render(); });
     if($('adGo')){
       $('adCancel').onclick = ()=>{ addDay = null; render(); };
+      $('adJob').onchange = ()=>{ const j = jobs.find(x=>x.id===$('adJob').value); if(!j || !addLast) return;
+        const d = drive(addLast.jobs, j); $('adTime').value = up5(addMin(hm(addLast.start_time), (addLast.duration_min||30) + d.min)); $('adDrive').textContent = driveTxt(d) + ' from the last job'; };
       $('adGo').onclick = async ()=>{ const j = jobs.find(x=>x.id===$('adJob').value); if(!j){ flash('Choose a job'); return; }
         $('adGo').disabled = true;
         try{ await book([j], addDay, $('adCal').value, $('adTime').value); flash(`Added to ${fmtDay(addDay)}`); }catch(e){ flash('Could not book: ' + e.message); }
@@ -235,7 +278,7 @@ const JOBS = (()=>{
         <label class="f">Date<input type="date" id="bkDate" value="${addDays(today(),1)}"></label>
         <label class="f">Start time<input type="time" id="bkTime" value="08:30"></label>
         <label class="f">Calendar<select id="bkCal">${calOpts((defCal()||{}).id, 'Each job\'s own calendar')}</select></label>
-      </div><p class="hint">Booked in the order shown, ${GAP} minutes apart after each job's length. Clear the start time to book them as all-day.</p>
+      </div><p class="hint">Booked in the order shown: each job's length, then the drive to the next (estimated from the postcodes). Clear the start time to book them as all-day.</p>
       <div class="vb-actions"><button class="btn" type="button" id="bkClear">Clear</button><button class="btn pri" type="button" id="bkGo">Book</button></div></section>` : ''}`;
   }
   function wireDue(){
