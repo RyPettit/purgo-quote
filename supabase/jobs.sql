@@ -32,7 +32,7 @@ create table if not exists public.rounds (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   frequency_weeks int not null default 4 check (frequency_weeks between 1 and 52),
-  monthly boolean not null default true,    -- rounds are done once a month by area
+  monthly boolean not null default false,   -- rounds are every 4 weeks (same weekday); monthly is an option
   calendar_id uuid references public.staff_calendars(id) on delete set null,
   start_time time not null default '08:30',
   notes text,
@@ -109,7 +109,8 @@ create table if not exists public.gcal_trash (
 
 alter table public.mail_connection add column if not exists scopes text;
 alter table public.jobs add column if not exists monthly boolean not null default false;
-alter table public.rounds add column if not exists monthly boolean not null default true;
+alter table public.rounds add column if not exists monthly boolean not null default false;
+alter table public.rounds alter column monthly set default false;
 
 drop trigger if exists rounds_touch on public.rounds;
 create trigger rounds_touch before update on public.rounds for each row execute function public.touch_updated_at();

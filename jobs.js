@@ -263,7 +263,7 @@ const JOBS = (()=>{
   function roundForm_(r){
     return `<div class="fields">
       <label class="f wide">Area<input id="rdName" value="${esc(r.name||'')}" placeholder="e.g. Hessle, Anlaby, Cottingham"></label>
-      <label class="f">How often<select id="rdFreq">${freqOpts(r.id ? r : {monthly:true}, true)}</select></label>
+      <label class="f">How often<select id="rdFreq">${freqOpts(r.id ? r : {frequency_weeks:4}, true)}</select></label>
       <label class="f">Calendar<select id="rdCal">${calOpts(r.calendar_id || (defCal()||{}).id)}</select></label>
       <label class="f">Start time<input type="time" id="rdTime" value="${hm(r.start_time)||'08:30'}"></label>
       <label class="f wide">Notes<input id="rdNotes" value="${esc(r.notes||'')}" placeholder="Area, day, where to park the van…"></label>
@@ -273,7 +273,7 @@ const JOBS = (()=>{
     if(openRound) return viewRound(rounds.find(r=>r.id===openRound));
     const act = rounds.filter(r=>r.active), old = rounds.filter(r=>!r.active);
     return `<section class="card"><div class="svc-head"><h2>Window cleaning rounds</h2>${roundForm ? '' : `<button class="btn sm pri" type="button" id="rdNew">New round</button>`}</div>
-      <p class="hint" style="margin-top:6px">Window cleaning is done by area, once a month for each. Make a round for each area, add the customers' window cleaning jobs to it in driving order, then book the whole area in one go each month. Everything else is ad hoc: book it from To book, or press + Add on a day in the Diary to fill it.</p>
+      <p class="hint" style="margin-top:6px">Window cleaning is done by area, every 4 weeks on the same day of the week. Make a round for each area, add the customers' window cleaning jobs to it in driving order, then book the whole area in one go each time it comes round. Everything else is ad hoc: book it from To book, or press + Add on a day in the Diary to fill it.</p>
       ${roundForm ? `<div class="ac-cform" style="padding:10px 0">${roundForm_({})}<div class="vb-actions"><button class="btn sm" type="button" id="rdCancel">Cancel</button><button class="btn sm pri" type="button" id="rdSave">Create round</button></div></div>` : ''}
       <div class="qlist" style="margin-top:8px">${act.map(r=>{ const s = roundStats(r);
         return `<div class="qitem"><div class="m"><b>${esc(r.name)}</b><small>${freqLabel(r.frequency_weeks, r.monthly)} · ${calDot(r.calendar_id)}${esc(calName(r.calendar_id))} · from ${hm(r.start_time)}</small><small>${s.n} customer${s.n===1?'':'s'} · ${s.next ? 'next due '+fmtDate(s.next) : 'no dates yet'}${s.due?` · <b>${s.due} due this week</b>`:''}</small></div>
