@@ -784,9 +784,9 @@ const PORTFOLIO = (()=>{
         </section>
         <section class="card"><div class="pf-maphead"><h3 style="margin:0">Routes</h3><span class="hint" style="margin:0">${routed.size} of ${all.length} properties planned</span></div>
           ${P.length ? `<div class="pf-rtabs">${P.map(x=>`<button type="button" data-plan="${x.id}" class="${x.id===MV.plan?'on':''}">${esc(x.name)}<small>${x.stops.length}${x.date?' · '+fmtD(x.date).replace(/ \d{4}$/,''):''}</small></button>`).join('')}</div>` : '<p class="hint">No routes yet.</p>'}
-          <div class="pf-tools" style="margin-top:10px"><button class="btn sm" type="button" id="mvNew">+ New route</button><button class="btn sm" type="button" id="mvAuto">Suggest routes…</button></div>
-          <div id="mvAutoBox" hidden class="pf-autobox"><p class="hint" style="margin-top:0">Splits every property not yet in a route into days, keeping each day's properties close together.</p>
-            <div class="fields"><label class="f">Properties per day<input type="number" id="mvPer" min="1" max="40" value="${esc(st.planPer || 10)}"></label><label class="f">First day<input type="date" id="mvFirst"></label></div>
+          <div class="pf-tools" style="margin-top:10px"><button class="btn sm" type="button" id="mvNew">+ New route</button><button class="btn sm" type="button" id="mvAuto">Suggest routes…</button>${P.length>1 ? `<span style="flex:1"></span><button class="btn sm del" type="button" id="mvClear">Delete all routes</button>` : ''}</div>
+          <div id="mvAutoBox" hidden class="pf-autobox"><p class="hint" style="margin-top:0">Splits the properties you choose (those not already in a route) into days, keeping each day's properties close together.</p>
+            <div class="fields"><label class="f wide">Which properties<select id="mvWhich">${[['visit','Site visit needed'],['notdone','Job not completed'],['all','All properties']].map(([k,l])=>`<option value="${k}" ${(MV.show==='visit'||MV.show==='notdone' ? MV.show : (countFree('visit') ? 'visit' : 'all'))===k?'selected':''}>${l} (${countFree(k)})</option>`).join('')}</select></label><label class="f">Properties per day<input type="number" id="mvPer" min="1" max="40" value="${esc(st.planPer || 10)}"></label><label class="f">First day<input type="date" id="mvFirst"></label></div>
             <label class="ck" style="margin-top:6px"><input type="checkbox" id="mvWeekdays" checked>Weekdays only</label>
             <div class="pf-tools" style="margin-top:8px"><span style="flex:1"></span><button class="btn pri sm" type="button" id="mvAutoGo">Make routes</button></div></div>
         </section>
@@ -809,6 +809,13 @@ const PORTFOLIO = (()=>{
     bindMap(box, p);
     drawMap(p);
   }
+  // properties that Suggest routes would plan for a choice of which ones (never ones already in a route)
+  function freeFor(which){
+    const routed = new Set(plans().flatMap(x=>x.stops));
+    return sorted().filter(s=>!routed.has(s.id) && ll(s) && incl(s) && s.data.job.status!=='na'
+      && (which==='visit' ? s.data.status==='visit' : s.data.job.status!=='done'));
+  }
+  function countFree(which){ try{ return freeFor(which).length; }catch(e){ return 0; } }
   function bindMap(box, p){
     const st = ST(), save = () => { savePortfolio(300); };
     box.querySelectorAll('#mvColour button').forEach(b=> b.onclick = ()=>{ MV.colour = b.dataset.c; render(); });
@@ -817,12 +824,14 @@ const PORTFOLIO = (()=>{
     $('mvReturn').onchange = e=>{ st.planReturn = e.target.checked; save(); render(); };
     box.querySelectorAll('[data-plan]').forEach(b=> b.onclick = ()=>{ MV.plan = b.dataset.plan; render(); });
     $('mvNew').onclick = ()=>{ const P = plans(); const n = {id:'r'+Date.now().toString(36), name:`Day ${P.length+1}`, date:'', stops:[]}; P.push(n); MV.plan = n.id; save(); render(); };
+    if($('mvClear')) $('mvClear').onclick = ()=>{ const P = plans(); if(!confirmInline('mvClear', `Press again to delete all ${P.length} routes. The properties stay in the portfolio.`)) return;
+      P.splice(0, P.length); MV.plan = null; save(); render(); flash('All routes deleted'); };
     $('mvAuto').onclick = ()=>{ const b = $('mvAutoBox'); b.hidden = !b.hidden; };
     $('mvAutoGo').onclick = ()=>{
       const per = Math.max(1, Math.min(40, Math.round(num($('mvPer').value)) || 10)); st.planPer = per;
-      const routed = new Set(plans().flatMap(x=>x.stops));
-      const free = sorted().filter(s=>!routed.has(s.id) && ll(s) && incl(s) && s.data.job.status!=='done' && s.data.job.status!=='na').map(s=>s.id);
-      if(!free.length){ flash('Every property is already in a route'); return; }
+      const which = $('mvWhich').value;
+      const free = freeFor(which).map(s=>s.id);
+      if(!free.length){ flash(which==='visit' ? 'No properties flagged for a site visit that aren\'t already in a route' : 'Every property is already in a route'); return; }
       const order = bestOrder(free, startLL(), false);
       let day = $('mvFirst').value ? new Date($('mvFirst').value + 'T12:00:00') : null; const wk = $('mvWeekdays').checked;
       const nextDay = d => { const n = new Date(d.getTime() + 864e5); if(wk) while(n.getDay()===0 || n.getDay()===6) n.setTime(n.getTime() + 864e5); return n; };
