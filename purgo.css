@@ -604,3 +604,6 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 }
 .jb-dha{margin-left:auto;display:flex;gap:6px}
 .jb-dh .jb-dha .btn{margin-left:0}
+.jb-drive{font-size:.78rem;color:var(--muted);padding:2px 0 2px 88px}
+.jb-drive.short{color:#b3261e;font-weight:600}
+@media (max-width:640px){.jb-drive{padding-left:0}}
