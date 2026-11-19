@@ -9,12 +9,15 @@
 //   {action:"connect", returnTo}   (admin)    -> {url}   open it, approve, Google sends you back to the Portal
 //   {action:"disconnect"}          (admin)    -> {ok}
 //   {action:"send", to, cc, subject, html, text, logText, attachments, accountId, quoteId, threadId} -> {id, threadId, from}
-//   {action:"sync"}  (x-purgo-key or staff)   -> {added}
+//   {action:"sync"}  (x-purgo-key or staff)   -> {added}   (also sends changed bookings to Google Calendar)
+//   {action:"calendar_setup"}      (admin)    -> {calendars}  make/share the Jamie, Ryan and Benna calendars
+//   {action:"calendar_sync"}                  -> {sent, removed, failed}
 // GET ?code=…&state=…  Google's redirect after approving.
 import { cors, reply, serviceClient, googleConfigured, getConn, accessToken, gmail, sendMail, cleanEmails, gid } from "../_shared/gmail.ts";
 import { gsecret } from "../_shared/gmail.ts";
+import { CAL_SCOPE, hasCalendar, setupCalendars, syncVisits } from "../_shared/calendar.ts";
 
-const SCOPES = "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
+const SCOPES = "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send " + CAL_SCOPE;
 const OK_ORIGINS = [/^https:\/\/(portal|quote)\.purgo-clean\.com$/, /^https:\/\/([a-z0-9-]+\.)?purgo-quote\.pages\.dev$/, /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const selfUrl = () => Deno.env.get("SUPABASE_URL")! + "/functions/v1/mail";
@@ -108,6 +111,15 @@ async function sync(db: Db): Promise<number> {
   return added;
 }
 
+// send changed bookings to Google Calendar (only once the calendars exist and access was granted)
+async function calSync(db: Db) {
+  if (!googleConfigured()) return null;
+  const conn = await getConn(db); if (!conn) return null;
+  const { data: c } = await db.from("mail_connection").select("scopes").eq("id", 1).maybeSingle();
+  if (!hasCalendar(c?.scopes)) return null;
+  return await syncVisits(db, await accessToken(conn));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const db = serviceClient();
@@ -131,7 +143,7 @@ Deno.serve(async (req) => {
         return go("failed");
       }
       const prof = await gmail(tj.access_token, "profile");
-      await db.from("mail_connection").update({ address: prof.emailAddress, refresh_token: tj.refresh_token, history_id: String(prof.historyId), connected_at: new Date().toISOString(),
+      await db.from("mail_connection").update({ address: prof.emailAddress, refresh_token: tj.refresh_token, history_id: String(prof.historyId), connected_at: new Date().toISOString(), scopes: tj.scope || null,
         oauth_state: null, oauth_state_at: null, last_error: null }).eq("id", 1);
       return go("connected");
     }
@@ -146,7 +158,12 @@ Deno.serve(async (req) => {
       const ok = (k?.cron_key && sent && sent === k.cron_key) || await who(db, req);
       if (!ok) return reply({ error: "Not allowed" }, 401);
       if (!googleConfigured()) return reply({ added: 0, connected: false });
-      try { return reply({ added: await sync(db) }); }
+      try {
+        const added = await sync(db);
+        let calendar = null;
+        try { calendar = await calSync(db); } catch (e) { console.error("calendar sync:", (e as Error).message); }
+        return reply({ added, calendar });
+      }
       catch (e) { await db.from("mail_connection").update({ last_error: String((e as Error).message).slice(0, 500) }).eq("id", 1); return reply({ error: (e as Error).message }, 500); }
     }
 
@@ -154,9 +171,11 @@ Deno.serve(async (req) => {
     if (!me) return reply({ error: "Please sign in again." }, 401);
 
     if (action === "status") {
-      const { data } = await db.from("mail_connection").select("address,refresh_token,last_sync,last_error,connected_at").eq("id", 1).maybeSingle();
+      const { data } = await db.from("mail_connection").select("address,refresh_token,last_sync,last_error,connected_at,scopes").eq("id", 1).maybeSingle();
+      const { data: cals } = await db.from("staff_calendars").select("gcal_id").eq("active", true);
       return reply({ configured: googleConfigured(), connected: !!(data && data.refresh_token && googleConfigured()), address: data?.refresh_token ? data.address : null,
-        lastSync: data?.last_sync || null, lastError: me.admin ? (data?.last_error || null) : null, connectedAt: data?.connected_at || null });
+        lastSync: data?.last_sync || null, lastError: me.admin ? (data?.last_error || null) : null, connectedAt: data?.connected_at || null,
+        calendar: !!(data?.refresh_token && hasCalendar(data?.scopes)), calendarsReady: !!(cals && cals.length && cals.every(c => c.gcal_id)) });
     }
 
     if (action === "connect") {
@@ -175,8 +194,23 @@ Deno.serve(async (req) => {
       if (!me.admin) return reply({ error: "Only the admin can disconnect the mailbox." }, 403);
       const conn = await getConn(db);
       if (conn?.refresh_token) await fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(conn.refresh_token), { method: "POST" }).catch(() => {});
-      await db.from("mail_connection").update({ refresh_token: null, address: null, history_id: null }).eq("id", 1);
+      await db.from("mail_connection").update({ refresh_token: null, address: null, history_id: null, scopes: null }).eq("id", 1);
       return reply({ ok: true });
+    }
+
+    if (action === "calendar_setup") {
+      if (!me.admin) return reply({ error: "Only the admin can set up the calendars." }, 403);
+      const conn = await getConn(db); if (!conn) return reply({ error: "Connect the Purgō mailbox first." }, 400);
+      const { data: c } = await db.from("mail_connection").select("scopes").eq("id", 1).maybeSingle();
+      if (!hasCalendar(c?.scopes)) return reply({ error: "Reconnect the mailbox to give the Portal access to Google Calendar." }, 400);
+      const calendars = await setupCalendars(db, await accessToken(conn));
+      const result = await syncVisits(db, await accessToken(conn));
+      return reply({ calendars, ...result });
+    }
+
+    if (action === "calendar_sync") {
+      const r = await calSync(db);
+      return reply(r || { sent: 0, removed: 0, failed: 0, notConnected: true });
     }
 
     if (action === "send") {

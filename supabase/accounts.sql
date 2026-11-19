@@ -237,6 +237,10 @@ begin
   update account_contacts set account_id = p_into where account_id = p_from;
   update account_comms set account_id = p_into where account_id = p_from;
   update portfolios set account_id = p_into where account_id = p_from;
+  if to_regclass('public.jobs') is not null then
+    execute 'update jobs set account_id = $1 where account_id = $2' using p_into, p_from;
+    execute 'update visits set account_id = $1 where account_id = $2' using p_into, p_from;
+  end if;
   update accounts t set
     email = coalesce(t.email, f.email), phone = coalesce(t.phone, f.phone),
     billing_line = coalesce(t.billing_line, f.billing_line), billing_postcode = coalesce(t.billing_postcode, f.billing_postcode),
