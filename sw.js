@@ -1,8 +1,8 @@
 // Purgō Portal service worker: lets the app open and quote with no signal.
 // Network first, cache as fallback, so a new release is picked up straight away
 // and the last good copy is used when there is no signal.
-const VERSION = 'purgo-dd8431016c';
-const SHELL = ['./', 'index.html', 'purgo.css?v=9551a27dc1', 'purgo.js?v=1b27c0f83d', 'measure.js?v=f88bc2a42d', 'portfolio.js?v=02f2b248ee', 'portal.js?v=4afff4439d', 'accounts.js?v=dec3e9a6db', 'mail.js?v=889da193d1', 'jobs.js?v=27dface0c9', 'config.js', 'vendor/supabase-2.117.3.js',
+const VERSION = 'purgo-2abae25346';
+const SHELL = ['./', 'index.html', 'purgo.css?v=e2d8829575', 'purgo.js?v=1b27c0f83d', 'measure.js?v=f88bc2a42d', 'portfolio.js?v=02f2b248ee', 'portal.js?v=4afff4439d', 'accounts.js?v=dec3e9a6db', 'mail.js?v=889da193d1', 'jobs.js?v=83121f5fe8', 'config.js', 'vendor/supabase-2.117.3.js',
   'postcodes.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png',
   'icons/apple-touch-icon.png', 'fonts/plus-jakarta-sans.woff2', 'brand/emblem-light.png', 'brand/wordmark-light.png',
   'brand/logo-navy.png', 'brand/logo-light.png'];
