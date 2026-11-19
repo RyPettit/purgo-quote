@@ -24,10 +24,14 @@ const MAIL = (()=>{
   }
   const firstName = s => { const n = String(s||'').trim(); if(!n || /\b(ltd|limited|plc|llp|management|properties|lettings|services|group|council|school|church)\b/i.test(n)) return ''; return n.split(/\s+/)[0]; };
   const hello = n => n ? `Hi ${n},` : 'Hello,';
-  const signoff = () => `Kind regards,\n${(ME && ME.name) || 'Purgō'}\nPurgō\n07930 877034`;
+  const signoff = () => `Kind regards,\n${(ME && ME.name) || 'Purgō'}`;
+  // Purgō's email signature (brand/email-signature.html); the logo is hosted on the Portal so email apps show it
+  const SIG_HTML = `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;max-width:560px;font-family:Calibri,Arial,Helvetica,sans-serif;margin-top:18px"><tr><td colspan="3" style="height:4px;line-height:4px;font-size:0;background:#132F47;background-image:linear-gradient(90deg,#132F47 0%,#132F47 55%,#326986 80%,#6DA7C4 100%);">&nbsp;</td></tr><tr><td colspan="3" style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr><tr><td valign="middle" style="padding-right:18px;"><a href="https://www.purgo-clean.com" style="text-decoration:none;"><img src="https://portal.purgo-clean.com/brand/email-logo.png" width="172" height="48" alt="Purgō" style="display:block;border:0;width:172px;height:48px;"></a></td><td style="width:1px;background:#C6E1EF;font-size:0;">&nbsp;</td><td valign="middle" style="padding-left:18px;font-family:Calibri,Arial,Helvetica,sans-serif;font-size:13px;line-height:19px;color:#132F47;"><div style="font-size:10px;letter-spacing:1.5px;font-weight:bold;color:#326986;">EXTERIOR CLEANING SPECIALISTS</div><div><span style="color:#6DA7C4;">T</span>&nbsp; <a href="tel:+447930877034" style="color:#132F47;text-decoration:none;font-weight:bold;">07930 877034</a></div><div><span style="color:#6DA7C4;">E</span>&nbsp; <a href="mailto:hello@purgo-clean.com" style="color:#132F47;text-decoration:none;">hello@purgo-clean.com</a></div><div><span style="color:#6DA7C4;">W</span>&nbsp; <a href="https://www.purgo-clean.com" style="color:#132F47;text-decoration:none;">www.purgo-clean.com</a></div><div style="color:#326986;">Serving Hull &amp; East Yorkshire</div></td></tr><tr><td colspan="3" style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr><tr><td colspan="3" style="border-top:1px solid #C6E1EF;padding-top:10px;font-family:Calibri,Arial,Helvetica,sans-serif;font-size:10px;letter-spacing:1px;color:#132F47;">GUTTER CLEANING <span style="color:#6DA7C4;">&nbsp;•&nbsp;</span> ROOF CLEANING <span style="color:#6DA7C4;">&nbsp;•&nbsp;</span> WINDOW CLEANING <span style="color:#6DA7C4;">&nbsp;•&nbsp;</span> PRESSURE WASHING</td></tr><tr><td colspan="3" style="padding-top:8px;font-family:Calibri,Arial,Helvetica,sans-serif;font-size:10px;line-height:14px;color:#7a8a99;">Purgō Clean Ltd · Registered in England &amp; Wales · Company No. 17451681<br>Registered office: 103 Southfield, Hessle, HU13 0ET</td></tr></table>`;
+  const SIG_TEXT = 'Purgō · Exterior cleaning specialists\nT 07930 877034 · E hello@purgo-clean.com · W www.purgo-clean.com\nServing Hull & East Yorkshire\nPurgō Clean Ltd · Company No. 17451681 · 103 Southfield, Hessle, HU13 0ET';
   const paras = msg => esc(msg).split(/\n{2,}/).map(p=>`<p style="margin:0 0 12px">${p.replace(/\n/g,'<br>')}</p>`).join('');
   const F = "font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;";
-  const wrapHtml = (msg, extra) => `<div style="${F}color:#132f47;font-size:15px;line-height:1.5;max-width:640px">${paras(msg)}${extra ? `<div style="margin-top:18px">${extra}</div>` : `<p style="margin:16px 0 0;color:#53708a;font-size:13px">Purgō, family run exterior cleaning<br>Tel 07930 877034 · www.purgo-clean.com</p>`}</div>`;
+  const wrapHtml = (msg, extra) => `<div style="${F}color:#132f47;font-size:15px;line-height:1.5;max-width:640px">${paras(msg)}${SIG_HTML}${extra ? `<div style="margin-top:24px">${extra}</div>` : ''}</div>`;
+  const withSig = msg => `${msg}\n\n--\n${SIG_TEXT}`;
   const toB64 = doc => doc.output('datauristring').split(',')[1];
 
   /* ---------- compose dialog ---------- */
@@ -68,7 +72,7 @@ const MAIL = (()=>{
       try{
         if(o.beforeSend) await o.beforeSend();
         if(s.connected){
-          const built = o.build ? o.build(msg) : {html:wrapHtml(msg), text:msg};
+          const built = o.build ? o.build(msg) : {html:wrapHtml(msg), text:withSig(msg), log:msg};
           const attachments = o.attach && dlg.querySelector('#mlAttach') && dlg.querySelector('#mlAttach').checked ? await o.attach.make() : [];
           await fn({action:'send', to, cc:(dlg.querySelector('#mlCc')||{}).value||'', subject, html:built.html, text:built.text, logText:built.log||built.text, attachments, accountId:o.accountId||null, quoteId:o.quoteId||null});
           close(); flash(`Sent to ${to}`);
@@ -108,7 +112,7 @@ const MAIL = (()=>{
         title: `Email quote ${m.ref}`, to: $('email').value.trim() || row.email || '', subject: `Your Purgō quote ${m.ref}`, text: msg,
         note: 'The email includes the full quote and a <b>View and accept your quote</b> button. When the customer accepts, the quote is marked Accepted and you get a notification.',
         accountId, quoteId: qid,
-        build: t => ({html: wrapHtml(t, quoteHTML(m, {acceptUrl:link})), text: `${t}\n\n${quoteText(m, {acceptUrl:link})}`, log: `${t}\n\n(Quote ${m.ref} for ${gbp(m.total)} included, with the link to accept online.)`}),
+        build: t => ({html: wrapHtml(t, quoteHTML(m, {acceptUrl:link})), text: `${withSig(t)}\n\n${quoteText(m, {acceptUrl:link})}`, log: `${t}\n\n(Quote ${m.ref} for ${gbp(m.total)} included, with the link to accept online.)`}),
         appBody: t => `${t}\n\nView and accept your quote online:\n${link}`,
         attach: {label:`Attach the quote as a PDF (${pdfName(m)})`, make: async ()=> [{name:pdfName(m), type:'application/pdf', b64:toB64(await buildQuotePdf(m, {acceptUrl:link}))}]},
         beforeSend: async ()=>{ const r = await sb.rpc('share_quote', {p_quote:qid, p_html:quoteHTML(m, {acceptUrl:link})}); if(r.error) throw r.error; },
