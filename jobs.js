@@ -313,6 +313,27 @@ const JOBS = (()=>{
     return out;
   }
   const rdKey = rd => rd.moved_from || rd.date;
+  // which of a round's dates a customer is booked on: every one for a customer on the round's own frequency,
+  // every 2nd for 8 weeks on a 4-weekly round, every 3rd for 12 weeks, and just the next one for a one-off
+  function roundEvery(j, r){
+    const rf = r.monthly ? 4 : (r.frequency_weeks||4);
+    if(!j.frequency_weeks && !j.monthly) return 0;            // one-off
+    if(j.monthly) return 1;
+    return Math.max(1, Math.round(j.frequency_weeks / rf));
+  }
+  function wantedFor(j, r, rds){
+    const live = rds.filter(d=>d.status==='planned').sort((a,b)=>rdKey(a).localeCompare(rdKey(b)));
+    if(!live.length) return new Set();
+    const k = roundEvery(j, r), rf = r.monthly ? 4 : (r.frequency_weeks||4);
+    // line the customer up with their next due date (the round date nearest to it, never earlier than half a round before)
+    const from = j.next_due ? addDays(j.next_due, -Math.floor(rf*7/2)) : today();
+    const ai = live.findIndex(d=>rdKey(d) >= from);
+    if(ai < 0) return new Set();
+    if(k===0) return new Set([live[ai].id]);
+    const anchor = rdKey(live[ai]);
+    return new Set(live.filter(d=>{ const diff = daysBetween(anchor, rdKey(d)); return diff >= 0 && Math.round(diff/(7*rf)) % k === 0; }).map(d=>d.id));
+  }
+  const everyTxt = (j, r) => { const k = roundEvery(j, r); return k===0 ? 'next round only' : k===1 ? 'every round' : `every ${k===2?'2nd':k===3?'3rd':k+'th'} round`; };
   const ignoreDup = e => e && e.code !== '23505' ? e : null;
   // bring a round's dates and bookings into line with its settings and customers
   async function planRound(r){
@@ -343,13 +364,14 @@ const JOBS = (()=>{
     const qv = await sb.from('visits').select('id,job_id,round_date_id,date,start_time,duration_min,calendar_id,status,price,detached').in('round_date_id', rds.map(x=>x.id));
     if(qv.error) throw qv.error;
     const vs = qv.data;
-    // customers taken off the round (or paused) come off its future dates
-    const drop = vs.filter(v=>v.status==='booked' && !jid.has(v.job_id)).map(v=>v.id);
+    const wantJ = new Map(js.map(j=>[j.id, wantedFor(j, r, rds)]));
+    // customers taken off the round (or paused), or not due on that date any more, come off it
+    const drop = vs.filter(v=>v.status==='booked' && !v.detached && (!jid.has(v.job_id) || !wantJ.get(v.job_id).has(v.round_date_id))).map(v=>v.id);
     if(drop.length){ const {error} = await sb.from('visits').delete().in('id', drop); if(error) throw error; }
     const ins = [];
     for(const rd of rds){
       const mine = vs.filter(v=>v.round_date_id===rd.id && !drop.includes(v.id));
-      for(const j of js) if(!mine.some(v=>v.job_id===j.id))
+      for(const j of js) if(wantJ.get(j.id).has(rd.id) && !mine.some(v=>v.job_id===j.id))
         ins.push({job_id:j.id, account_id:j.account_id, round_date_id:rd.id, date:rd.date, duration_min:j.duration_min||30, calendar_id:rd.calendar_id, price:j.price, created_by_name:ME.name});
     }
     if(ins.length){ const {error} = await sb.from('visits').insert(ins); if(ignoreDup(error)) throw error; }
@@ -419,6 +441,8 @@ const JOBS = (()=>{
     const free = jobs.filter(j=>!j.round_id && j.status==='active' && j.service==='windows');
     const s = roundStats(r);
     const dates = roundDates.filter(d=>d.round_id===r.id && d.date>=today()).sort((a,b)=>a.date.localeCompare(b.date));
+    const act = l.filter(j=>j.status==='active'), wants = new Map(act.map(j=>[j.id, wantedFor(j, r, dates)]));
+    const onDate = d => act.filter(j=>wants.get(j.id).has(d.id));
     return `<section class="card">
       <button class="linkbtn" type="button" id="rdBack">← All rounds</button>
       <div class="svc-head" style="margin-top:6px"><h2>${esc(r.name)}</h2><span class="hint">${s.n} customers · ${gbp(s.val)} per round</span></div>
@@ -427,13 +451,13 @@ const JOBS = (()=>{
     </section>
     <section class="card"><h2>Round dates</h2>
       ${!r.next_date ? `<p class="hint">Put in the next round date above and press Save round: it's then planned every ${r.monthly?'month':(r.frequency_weeks||4)+' weeks'} and added to ${esc(calName(r.calendar_id)||'the')} calendar.</p>` : !r.active ? `<p class="hint">This round is stopped, so no dates are planned.</p>` : ''}
-      <div class="qlist" style="margin-top:8px">${dates.map(d=>`<div class="qitem ${d.status==='cancelled'?'jb-acj ended':''}"><div class="m"><b>${fmtDay(d.date)} ${pd(d.date).getFullYear()}</b><small>${d.status==='cancelled' ? 'Cancelled' : `${calDot(d.calendar_id)}${esc(calName(d.calendar_id))} · from ${hm(d.start_time)} · ${s.n} customer${s.n===1?'':'s'}`}${d.moved_from?` · moved from ${fmtDay(d.moved_from)}`:''}${d.gcal_error?` · <span class="jb-err">Calendar: ${esc(d.gcal_error)}</span>`:''}</small></div>
+      <div class="qlist" style="margin-top:8px">${dates.map(d=>`<div class="qitem ${d.status==='cancelled'?'jb-acj ended':''}"><div class="m"><b>${fmtDay(d.date)} ${pd(d.date).getFullYear()}</b><small>${d.status==='cancelled' ? 'Cancelled' : `${calDot(d.calendar_id)}${esc(calName(d.calendar_id))} · from ${hm(d.start_time)} · ${onDate(d).length} customer${onDate(d).length===1?'':'s'} · ${gbp(onDate(d).reduce((a,j)=>a+(+j.price||0),0))}`}${d.moved_from?` · moved from ${fmtDay(d.moved_from)}`:''}${d.gcal_error?` · <span class="jb-err">Calendar: ${esc(d.gcal_error)}</span>`:''}</small></div>
         <div class="qacts">${d.status==='cancelled' ? `<button class="btn sm" type="button" data-rdrestore="${d.id}">Restore</button>` : `<button class="btn sm" type="button" data-rdmove="${d.id}">Move</button><button class="btn sm" type="button" data-rdcancel="${d.id}">Cancel</button>`}</div>
         ${rdMove===d.id ? `<div class="fields jb-move wide"><label class="f">New date<input type="date" id="rmDate" value="${d.date}"></label><label class="f">Start time<input type="time" id="rmTime" value="${hm(d.start_time)}"></label>
           <div class="vb-actions wide"><button class="btn sm" type="button" id="rmCancel">Close</button><button class="btn sm pri" type="button" id="rmSave">Move round</button></div><p class="hint wide">Only this date moves; the next one stays ${r.monthly?'a month':(r.frequency_weeks||4)+' weeks'} after the original date.</p></div>` : ''}</div>`).join('') || (r.next_date && r.active ? '<p class="hint">Planning…</p>' : '')}</div>
     </section>
     <section class="card"><h2>Customers in driving order</h2>
-      <div class="qlist" style="margin-top:8px">${l.map((j,i)=>`<div class="qitem jb-ri"><span class="jb-n">${i+1}</span><div class="m"><b><button class="linkbtn" type="button" data-goacc="${j.account_id}">${esc((j.accounts||{}).name||'')}</button></b><small>${esc(where(j))}${j.title?' · '+esc(j.title):''}</small>${j.status==='paused'?'<small>Paused: not booked on round dates</small>':''}${i>0 ? `<small>🚐 ${esc(driveTxt(drive(l[i-1], j)))}</small>` : ''}</div>
+      <div class="qlist" style="margin-top:8px">${l.map((j,i)=>`<div class="qitem jb-ri"><span class="jb-n">${i+1}</span><div class="m"><b><button class="linkbtn" type="button" data-goacc="${j.account_id}">${esc((j.accounts||{}).name||'')}</button></b><small>${esc(where(j))}${j.title?' · '+esc(j.title):''}</small><small>${freqLabel(j.frequency_weeks, j.monthly)} · ${everyTxt(j, r)}</small>${j.status==='paused'?'<small>Paused: not booked on round dates</small>':''}${i>0 ? `<small>🚐 ${esc(driveTxt(drive(l[i-1], j)))}</small>` : ''}</div>
         <div class="v">${gbp(+j.price||0)}</div>
         <div class="qacts"><button class="btn sm" type="button" data-up="${j.id}" ${i?'':'disabled'} aria-label="Move up">↑</button><button class="btn sm" type="button" data-down="${j.id}" ${i<l.length-1?'':'disabled'} aria-label="Move down">↓</button><button class="btn sm" type="button" data-rdrm="${j.id}">Remove</button></div></div>`).join('') || '<p class="hint">No customers on this round yet.</p>'}</div>
       <div class="fields one" style="margin-top:10px"><label class="f">Add a customer's window cleaning job<select id="rdAdd"><option value="">${free.length ? 'Choose…' : 'No window cleaning jobs without a round'}</option>${free.map(j=>`<option value="${j.id}">${esc((j.accounts||{}).name||'')} – ${esc(where(j))} (${gbp(+j.price||0)})</option>`).join('')}</select></label></div>
@@ -462,8 +486,8 @@ const JOBS = (()=>{
     $('rdUpd').onclick = async ()=>{ const v = roundVals(); if(!v.name){ flash('Give the round an area name'); return; }
       $('rdUpd').disabled = true;
       const {error} = await sb.from('rounds').update(v).eq('id', r.id); if(error){ flash(error.message); $('rdUpd').disabled = false; return; }
-      // customers on the round follow its frequency and calendar; future round dates follow its start time and calendar
-      const e2 = (await sb.from('jobs').update({monthly:v.monthly, frequency_weeks:v.monthly?null:v.frequency_weeks, calendar_id:v.calendar_id}).eq('round_id', r.id)).error;
+      // customers on the round follow its calendar (each keeps their own frequency); future round dates follow its start time and calendar
+      const e2 = (await sb.from('jobs').update({calendar_id:v.calendar_id}).eq('round_id', r.id)).error;
       const e3 = (await sb.from('round_dates').update({start_time:v.start_time, calendar_id:v.calendar_id}).eq('round_id', r.id).eq('status','planned').gte('date', today()).is('moved_from', null)).error;
       if(e2 || e3) flash((e2||e3).message);
       await replan({...r, ...v}, 'Round saved'); };
@@ -474,7 +498,8 @@ const JOBS = (()=>{
       try{ await saveOrder(l); }catch(e){ flash(e.message); } render(); clearTimeout(reorderT); reorderT = setTimeout(()=> replan(r), 1500); });
     root().querySelectorAll('[data-rdrm]').forEach(b=> b.onclick = async ()=>{ const {error} = await sb.from('jobs').update({round_id:null, round_order:null}).eq('id', b.dataset.rdrm); if(error) flash(error.message); await replan(r, 'Taken off the round and its future dates'); });
     $('rdAdd').onchange = async e=>{ const id = e.target.value; if(!id) return;
-      const {error} = await sb.from('jobs').update({round_id:r.id, round_order:l.length+1, monthly:r.monthly, frequency_weeks:r.monthly?null:r.frequency_weeks, calendar_id:r.calendar_id}).eq('id', id);
+      // each customer keeps their own frequency: 4 weeks = every round, 8 = every 2nd, 12 = every 3rd, one-off = next round only
+      const {error} = await sb.from('jobs').update({round_id:r.id, round_order:l.length+1, calendar_id:r.calendar_id}).eq('id', id);
       if(error) flash(error.message); await replan(r, r.next_date ? 'Added and booked on the future round dates' : 'Added to the round'); };
     root().querySelectorAll('[data-rdmove]').forEach(b=> b.onclick = ()=>{ rdMove = rdMove===b.dataset.rdmove ? null : b.dataset.rdmove; render(); });
     if($('rmSave')){
@@ -550,7 +575,7 @@ const JOBS = (()=>{
       <label class="f wide">What's included<input id="jfTitle" value="${esc(j.title||'')}" placeholder="e.g. Front & back, conservatory, frames every 3rd clean"></label>
       <label class="f">How often<select id="jfFreq">${freqOpts(j)}</select></label>
       <label class="f">Next due<input id="jfDue" type="date" value="${j.next_due||''}"></label>
-      <label class="f">Round<select id="jfRound">${roundOpts(j.round_id)}</select></label>
+      <label class="f">Round<select id="jfRound">${roundOpts(j.round_id)}</select><small class="hint">On a 4-weekly round: 8 weeks = every 2nd round, 12 = every 3rd</small></label>
       <label class="f">Calendar<select id="jfCal">${calOpts(j.calendar_id || (defCal()||{}).id)}</select></label>
       <label class="f">Takes (minutes)<input id="jfDur" type="number" min="5" step="5" value="${j.duration_min||30}"></label>
       ${j.id ? `<label class="f">Status<select id="jfStatus">${[['active','Active'],['paused','Paused'],['ended','Finished']].map(([k,v])=>`<option value="${k}" ${j.status===k?'selected':''}>${v}</option>`).join('')}</select></label>` : ''}
@@ -600,7 +625,7 @@ const JOBS = (()=>{
         loaded = false; await again(); };
     }
     if($('jfAddr')) $('jfAddr').onchange = e=>{ const p = (d.props||[]).find(x=>x.id===e.target.value); if(p){ $('jfLine').value = p.line||''; $('jfPc').value = p.postcode||''; } };
-    if($('jfRound')) $('jfRound').onchange = e=>{ const r = rounds.find(x=>x.id===e.target.value); if(r){ $('jfFreq').value = r.monthly ? 'm' : String(r.frequency_weeks); if(r.calendar_id) $('jfCal').value = r.calendar_id; if($('jfSvc').value!=='windows') $('jfSvc').value = 'windows'; } };
+    if($('jfRound')) $('jfRound').onchange = e=>{ const r = rounds.find(x=>x.id===e.target.value); if(r){ if(!$('jfFreq').value) $('jfFreq').value = r.monthly ? 'm' : String(r.frequency_weeks); if(r.calendar_id) $('jfCal').value = r.calendar_id; if($('jfSvc').value!=='windows') $('jfSvc').value = 'windows'; } };
     if($('jfSave')){
       $('jfCancel').onclick = ()=>{ acc.editing = null; acc.prefill = null; again(true); };
       $('jfSave').onclick = async ()=>{
