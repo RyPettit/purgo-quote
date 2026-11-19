@@ -22,6 +22,7 @@ change prices.
 | `supabase/accounts.sql` | Accounts tables, auto-linking of quotes to accounts, merge function. Safe to re-run. |
 | `jobs.js` | Jobs: each customer's regular or one-off work, window cleaning rounds, the diary (Jamie / Ryan / Benna) and the Jobs tab on accounts |
 | `supabase/jobs.sql` | Jobs, rounds, visits and work calendars tables; done/skipped moves the next due date on. Safe to re-run. |
+| `supabase/rounds.sql` | Window round dates: each round's next date repeats every N weeks; one Google Calendar event per round date. Safe to re-run. |
 | `supabase/functions/_shared/calendar.ts` | Copies bookings to Google Calendar (a calendar each for Jamie, Ryan and Benna), run by the mail function |
 | `mail.js` | Emailing quotes and messages, the notification bell, Admin → Email (Gmail connection) |
 | `q.html` | The customer's online quote: view, accept, decline or ask a question (no login; link sent in the quote email) |

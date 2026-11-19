@@ -607,3 +607,4 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .jb-drive{font-size:.78rem;color:var(--muted);padding:2px 0 2px 88px}
 .jb-drive.short{color:#b3261e;font-weight:600}
 @media (max-width:640px){.jb-drive{padding-left:0}}
+.jb-rtag{font-size:.7rem;font-weight:700;color:#326986;background:#e6f1f7;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:middle}

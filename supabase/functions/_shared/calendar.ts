@@ -35,6 +35,7 @@ export async function setupCalendars(db: SupabaseClient, token: string) {
       await db.from("staff_calendars").update({ gcal_id: id }).eq("id", c.id);
       // a new calendar: every booking for this person needs sending to it
       await db.from("visits").update({ gcal_dirty: true }).eq("calendar_id", c.id).neq("status", "cancelled");
+      await db.from("round_dates").update({ gcal_dirty: true }).eq("calendar_id", c.id).neq("status", "cancelled");
     }
     try { await gcal(token, `/users/me/calendarList/${encodeURIComponent(id!)}?colorRgbFormat=true`, { method: "PATCH", body: JSON.stringify({ backgroundColor: c.colour || "#4a86e8", foregroundColor: "#ffffff", selected: true }) }); } catch { /* colour is cosmetic */ }
     if (c.share_with) await gcal(token, `/calendars/${encodeURIComponent(id!)}/acl?sendNotifications=true`, { method: "POST", body: JSON.stringify({ role: "writer", scope: { type: "user", value: c.share_with } }) });
@@ -52,7 +53,7 @@ function addMinutes(date: string, time: string, mins: number) {
 const nextDay = (date: string) => addMinutes(date, "00:00", 1440).slice(0, 10);
 const gbp = (n: number) => "£" + (Math.round((+n || 0) * 100) / 100).toFixed(2);
 
-type V = { id: string; date: string; start_time: string | null; duration_min: number; calendar_id: string | null; status: string; price: number | null; notes: string | null;
+type V = { id: string; round_date_id: string | null; detached: boolean; date: string; start_time: string | null; duration_min: number; calendar_id: string | null; status: string; price: number | null; notes: string | null;
   gcal_event_id: string | null; gcal_calendar: string | null;
   jobs: { job_no: number; service: string; title: string | null; line: string | null; postcode: string | null; notes: string | null; price: number } | null;
   accounts: { name: string; phone: string | null; account_no: number } | null };
@@ -99,16 +100,17 @@ export async function syncVisits(db: SupabaseClient, token: string, limit = 150)
   const byId = new Map((cals || []).map(c => [c.id, c.gcal_id as string | null]));
   const def = (cals || []).find(c => c.is_default)?.gcal_id || null;
   const { data: vs, error } = await db.from("visits")
-    .select("id,date,start_time,duration_min,calendar_id,status,price,notes,gcal_event_id,gcal_calendar,jobs(job_no,service,title,line,postcode,notes,price),accounts(name,phone,account_no)")
+    .select("id,round_date_id,detached,date,start_time,duration_min,calendar_id,status,price,notes,gcal_event_id,gcal_calendar,jobs(job_no,service,title,line,postcode,notes,price),accounts(name,phone,account_no)")
     .eq("gcal_dirty", true).order("date").limit(limit);
   if (error) throw error;
   for (const v of (vs || []) as unknown as V[]) {
     const target = (v.calendar_id && byId.get(v.calendar_id)) || def;
     try {
       const del = async () => { if (v.gcal_event_id && v.gcal_calendar) { try { await gcal(token, `/calendars/${encodeURIComponent(v.gcal_calendar)}/events/${encodeURIComponent(v.gcal_event_id)}`, { method: "DELETE" }); } catch (e) { if (!gone(e)) throw e; } } };
-      if (v.status === "cancelled" || !target) {
+      // cancelled, no calendar yet, or part of a round (the round date has one event for everyone)
+      if (v.status === "cancelled" || !target || (v.round_date_id && !v.detached)) {
         await del(); if (v.gcal_event_id) removed++;
-        await db.from("visits").update({ gcal_event_id: null, gcal_calendar: null, gcal_dirty: false, gcal_error: target ? null : "Calendars not set up yet", gcal_synced_at: new Date().toISOString() }).eq("id", v.id);
+        await db.from("visits").update({ gcal_event_id: null, gcal_calendar: null, gcal_dirty: false, gcal_error: target || (v.round_date_id && !v.detached) ? null : "Calendars not set up yet", gcal_synced_at: new Date().toISOString() }).eq("id", v.id);
         continue;
       }
       const ev = eventFor(v);
@@ -123,6 +125,59 @@ export async function syncVisits(db: SupabaseClient, token: string, limit = 150)
     } catch (e) {
       failed++;
       await db.from("visits").update({ gcal_error: String((e as Error).message).slice(0, 300) }).eq("id", v.id);
+    }
+  }
+  const r = await syncRoundDates(db, token, byId, def);
+  return { sent: sent + r.sent, removed: removed + r.removed, failed: failed + r.failed };
+}
+
+const hhmm = (t: string | null) => (t || "").slice(0, 5);
+const mins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+
+// one event per window round date, listing the customers in driving order
+async function syncRoundDates(db: SupabaseClient, token: string, byId: Map<string, string | null>, def: string | null) {
+  let sent = 0, removed = 0, failed = 0;
+  const { data: rds, error } = await db.from("round_dates")
+    .select("id,date,start_time,calendar_id,status,notes,gcal_event_id,gcal_calendar,rounds(name)")
+    .eq("gcal_dirty", true).order("date").limit(100);
+  if (error) throw error;
+  for (const rd of (rds || []) as unknown as { id: string; date: string; start_time: string; calendar_id: string | null; status: string; notes: string | null; gcal_event_id: string | null; gcal_calendar: string | null; rounds: { name: string } | null }[]) {
+    const target = (rd.calendar_id && byId.get(rd.calendar_id)) || def;
+    const del = async () => { if (rd.gcal_event_id && rd.gcal_calendar) { try { await gcal(token, `/calendars/${encodeURIComponent(rd.gcal_calendar)}/events/${encodeURIComponent(rd.gcal_event_id)}`, { method: "DELETE" }); } catch (e) { if (!gone(e)) throw e; } } };
+    try {
+      if (rd.status === "cancelled" || !target) {
+        await del(); if (rd.gcal_event_id) removed++;
+        await db.from("round_dates").update({ gcal_event_id: null, gcal_calendar: null, gcal_dirty: false, gcal_error: null, gcal_synced_at: new Date().toISOString() }).eq("id", rd.id);
+        continue;
+      }
+      const { data: vs } = await db.from("visits").select("start_time,duration_min,status,price,jobs(line,postcode,title,price),accounts(name)")
+        .eq("round_date_id", rd.id).eq("detached", false).neq("status", "cancelled").order("start_time", { nullsFirst: false });
+      const list = (vs || []) as unknown as { start_time: string | null; duration_min: number; status: string; price: number | null; jobs: { line: string | null; postcode: string | null; title: string | null; price: number } | null; accounts: { name: string } | null }[];
+      const st = hhmm(rd.start_time) || "08:30";
+      let end = mins(st) + 120;
+      for (const v of list) if (v.start_time) end = Math.max(end, mins(hhmm(v.start_time)) + (v.duration_min || 30));
+      const total = list.filter(v => v.status !== "skipped").reduce((a, v) => a + (+(v.price ?? v.jobs?.price ?? 0) || 0), 0);
+      const name = rd.rounds?.name || "Round";
+      const lines = list.map((v, i) => `${i + 1}. ${hhmm(v.start_time)} ${v.accounts?.name || ""} – ${[v.jobs?.line, v.jobs?.postcode].filter(Boolean).join(", ")} – ${gbp(+(v.price ?? v.jobs?.price ?? 0))}${v.status === "done" ? " ✓" : v.status === "skipped" ? " (skipped)" : ""}`);
+      const ev = {
+        summary: `Window round – ${name}${list.length ? ` (${list.length})` : ""}`,
+        description: [list.length ? lines.join("\n") : "No customers on this round yet – add them in the Portal.", list.length ? `\nTotal: ${gbp(total)}` : null, rd.notes ? `Note: ${rd.notes}` : null, `Open in the Portal: ${portalUrl()}/#jobs`].filter(Boolean).join("\n"),
+        start: { dateTime: `${rd.date}T${st}:00`, timeZone: TZ },
+        end: { dateTime: addMinutes(rd.date, "00:00", Math.min(end, 23 * 60 + 59)), timeZone: TZ },
+        extendedProperties: { private: { purgoRoundDate: rd.id } },
+        reminders: { useDefault: false, overrides: [] },
+      };
+      let eid: string | null = null;
+      if (rd.gcal_event_id && rd.gcal_calendar === target) {
+        try { const r = await gcal(token, `/calendars/${encodeURIComponent(target)}/events/${encodeURIComponent(rd.gcal_event_id)}`, { method: "PUT", body: JSON.stringify(ev) }); eid = r.id; }
+        catch (e) { if (!gone(e)) throw e; }
+      } else await del();
+      if (!eid) { const r = await gcal(token, `/calendars/${encodeURIComponent(target)}/events`, { method: "POST", body: JSON.stringify(ev) }); eid = r.id; }
+      await db.from("round_dates").update({ gcal_event_id: eid, gcal_calendar: target, gcal_dirty: false, gcal_error: null, gcal_synced_at: new Date().toISOString() }).eq("id", rd.id);
+      sent++;
+    } catch (e) {
+      failed++;
+      await db.from("round_dates").update({ gcal_error: String((e as Error).message).slice(0, 300) }).eq("id", rd.id);
     }
   }
   return { sent, removed, failed };
