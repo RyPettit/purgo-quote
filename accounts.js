@@ -49,7 +49,7 @@ const ACCOUNTS = (()=>{
     const [a, c, q, p, m] = await Promise.all([
       sb.from('accounts').select('*').eq('id', id).maybeSingle(),
       sb.from('account_contacts').select('*').eq('account_id', id).order('is_primary', {ascending:false}).order('name'),
-      sb.from('quotes').select('id,ref,quote_no,status,customer,address,postcode,total,lines,created_at,updated_at,sent_at,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '')).eq('account_id', id).order('created_at', {ascending:false}),
+      sb.from('quotes').select('id,ref,quote_no,status,customer,address,postcode,total,lines,state,created_at,updated_at,sent_at,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '')).eq('account_id', id).order('created_at', {ascending:false}),
       sb.from('addresses').select('id,key,line,postcode,notes,last_quoted').eq('account_id', id).order('last_quoted', {ascending:false, nullsFirst:false}),
       sb.from('account_comms').select('*').eq('account_id', id).order('occurred_at', {ascending:false}).limit(500)
     ]);

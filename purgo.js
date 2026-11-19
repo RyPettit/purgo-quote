@@ -360,7 +360,9 @@ function calcNow(){
 
   // Windows
   if($('on-wn').checked){
-    const g = grp('Windows');
+    const wf = +$('wnFreq').value || 0;
+    const g = grp(wf ? `Windows – every ${wf} weeks` : 'Windows – one-off clean');
+    o.notes.push(wf ? `Window cleaning is priced per clean and carried out every ${wf} weeks.` : 'Window cleaning is priced as a one-off clean.');
     const w = want('wWn', crew);
     const mode = $('wnMode').value, t = $('wnType').value, n = num('wnCount'), st = +$('wnSt').value;
     const own = $('wnPrice').value==='own';
@@ -599,7 +601,7 @@ function render(){
 let customNotes = null; // array of lines when edited, otherwise null
 function standardNotes(o){
   const n = [...new Set(o.notes)];
-  const has = name => o.groups.some(g=>g.name===name && g.lines.length);
+  const has = name => o.groups.some(g=>(g.name===name || g.name.startsWith(name+' –')) && g.lines.length);
   const pw = has('Pressure washing'), roof = has('Roof cleaning');
   const rows = pw ? pwRows.filter(r=>+r.sqm>0) : [];
   const chem = rows.some(r=>normRow(r).chems.length) || (roof && chemList('rf').length>0);
@@ -717,7 +719,7 @@ function restore(s){
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
   if(window.PURGO_MEASURE && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
   renderPw(); renderRf(); renderRfChem();
-  $('email').value = ''; $('wnPrice').value = 'builder'; $('wnOwn').value = 0;   // quotes saved before own-price existed used the builder
+  $('email').value = ''; $('wnPrice').value = 'builder'; $('wnOwn').value = 0; $('wnFreq').value = '4';   // quotes saved before own-price existed used the builder
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   ramsTouched = true;   // a saved quote keeps the RAMS choice it was saved with
   syncSvc(); resolvePc(); render();
@@ -892,7 +894,7 @@ $('copyQ').onclick = async ()=>{
 };
 $('newJob').onclick = ()=>{
   ['cust','addr','pc','phone','email','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
-  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); $('wnPrice').value='builder'; ramsTouched = false;
+  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); $('wnPrice').value='builder'; $('wnFreq').value='4'; ramsTouched = false;
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];
