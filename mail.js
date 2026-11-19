@@ -157,9 +157,14 @@ const MAIL = (()=>{
       : !s.connected ? `<p class="hint">Connect the Purgō mailbox so quotes and messages send from the Portal and customer emails appear on their accounts. You'll sign in with Google and approve access.</p><button class="btn pri" type="button" id="mlConnect">Connect Google mailbox</button>`
       : `<p>Connected: <b>${esc(s.address)}</b></p><p class="hint">Customer emails are checked every couple of minutes and added to their account's Communication tab. Last checked ${esc(ago)}.</p>
          ${s.lastError ? `<p class="note b">Last check failed: ${esc(s.lastError)}</p>` : ''}
-         <div class="vb-actions" style="justify-content:flex-start"><button class="btn" type="button" id="mlSync">Check now</button><button class="btn del" type="button" id="mlDisc">Disconnect</button></div>`);
+         <div class="vb-actions" style="justify-content:flex-start"><button class="btn" type="button" id="mlSync">Check now</button><button class="btn del" type="button" id="mlDisc">Disconnect</button></div>
+         <h3 style="margin-top:18px">Work calendars</h3>
+         ${!s.calendar ? `<p class="hint">Bookings can go straight into Google Calendar, with a calendar each for Jamie, Ryan and Benna. Press Reconnect, sign in as the Purgō mailbox again and approve Calendar access.</p><button class="btn pri" type="button" id="mlConnect">Reconnect to add Google Calendar</button>`
+           : `<p class="hint">${s.calendarsReady ? 'Jamie, Ryan and Benna each have a Purgō calendar. Bookings are copied to them every couple of minutes (straight away when you book from the Portal). Jamie\'s is shared with jamie@purgo-clean.com.' : 'Calendar access is approved. Press Set up calendars to make a calendar each for Jamie, Ryan and Benna and share Jamie\'s with him.'}</p>
+              <div class="vb-actions" style="justify-content:flex-start"><button class="btn ${s.calendarsReady?'':'pri'}" type="button" id="mlCal">${s.calendarsReady ? 'Check calendars' : 'Set up calendars'}</button></div>`}`);
     if($('mlConnect')) $('mlConnect').onclick = async ()=>{ try{ const r = await fn({action:'connect', returnTo:location.origin}); location.href = r.url; }catch(e){ flash(e.message); } };
     if($('mlSync')) $('mlSync').onclick = async ()=>{ $('mlSync').disabled = true; try{ const r = await fn({action:'sync'}); flash(r.added ? `${r.added} new email${r.added>1?'s':''} added to accounts` : 'No new customer emails'); }catch(e){ flash('Check failed: ' + e.message); } renderAdmin(); };
+    if($('mlCal')) $('mlCal').onclick = async ()=>{ $('mlCal').disabled = true; try{ const r = await fn({action:'calendar_setup'}); const made = r.calendars.filter(c=>c.made).length; flash(made ? `Made ${made} calendar${made>1?'s':''}: ${r.calendars.map(c=>c.name).join(', ')}` : `Calendars OK · ${r.sent} booking${r.sent===1?'':'s'} sent`); }catch(e){ flash('Calendar setup failed: ' + e.message); } st = null; renderAdmin(); };
     if($('mlDisc')) $('mlDisc').onclick = async ()=>{ if(!confirmInline('mlDisc', 'Press Disconnect again to stop the Portal using the mailbox.')) return; try{ await fn({action:'disconnect'}); flash('Mailbox disconnected'); }catch(e){ flash(e.message); } renderAdmin(); };
   }
 
@@ -235,6 +240,6 @@ const MAIL = (()=>{
   }
 
   if($('emailQ')) $('emailQ').onclick = emailQuote;
-  return {start, stop, status, compose, composeAccount, emailQuote, renderAdmin};
+  return {start, stop, status, compose, composeAccount, emailQuote, renderAdmin, fn};
 })();
 if(typeof ME!=='undefined' && ME && ROLE && ROLE!=='customer') MAIL.start();

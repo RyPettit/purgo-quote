@@ -49,7 +49,7 @@ const ACCOUNTS = (()=>{
     const [a, c, q, p, m] = await Promise.all([
       sb.from('accounts').select('*').eq('id', id).maybeSingle(),
       sb.from('account_contacts').select('*').eq('account_id', id).order('is_primary', {ascending:false}).order('name'),
-      sb.from('quotes').select('id,ref,quote_no,status,customer,address,postcode,total,created_at,updated_at,sent_at,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '')).eq('account_id', id).order('created_at', {ascending:false}),
+      sb.from('quotes').select('id,ref,quote_no,status,customer,address,postcode,total,lines,created_at,updated_at,sent_at,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '')).eq('account_id', id).order('created_at', {ascending:false}),
       sb.from('addresses').select('id,key,line,postcode,notes,last_quoted').eq('account_id', id).order('last_quoted', {ascending:false, nullsFirst:false}),
       sb.from('account_comms').select('*').eq('account_id', id).order('occurred_at', {ascending:false}).limit(500)
     ]);
@@ -57,7 +57,9 @@ const ACCOUNTS = (()=>{
     if(!a.data) throw new Error('This account no longer exists.');
     const pf = await sb.from('portfolios').select('id,name,status,updated_at,account_id,portfolio_sites(count)').or(`account_id.eq.${id},account_id.is.null`).order('updated_at', {ascending:false});
     if(pf.error) throw pf.error;
-    detail = {acc:a.data, contacts:c.data, quotes:q.data, props:p.data, comms:m.data,
+    let jobsData = null;
+    if(typeof JOBS!=='undefined'){ try{ jobsData = await JOBS.loadAccount(id); }catch(e){ jobsData = {jobs:[], visits:[], error:e.message}; } }
+    detail = {acc:a.data, contacts:c.data, quotes:q.data, props:p.data, comms:m.data, jobsData,
       portfolios:pf.data.filter(x=>x.account_id===id), freePortfolios:pf.data.filter(x=>!x.account_id)};
   }
 
@@ -203,6 +205,7 @@ const ACCOUNTS = (()=>{
 
   /* ---------- account page ---------- */
   async function open(id){
+    if(typeof JOBS!=='undefined') JOBS.resetAccount();
     cur = id; tab = tabFromSession(id); composer = null; editContact = null; editAddr = null; pfForm = false; mergeOpen = false;
     try{ sessionStorage.setItem('acCur', id); }catch(e){}
     if($('view-accounts').hidden) show('accounts');
@@ -228,7 +231,8 @@ const ACCOUNTS = (()=>{
   }
   function renderDetail(){
     const a = detail.acc;
-    const tabs = [['overview','Overview'],['quotes',`Quotes (${detail.quotes.length})`],['invoices','Invoices'],['comms',`Communication (${detail.comms.length})`]];
+    const nJobs = detail.jobsData ? detail.jobsData.jobs.filter(j=>j.status!=='ended').length : 0;
+    const tabs = [['overview','Overview'], ...(typeof JOBS!=='undefined' ? [['jobs',`Jobs (${nJobs})`]] : []), ['quotes',`Quotes (${detail.quotes.length})`],['invoices','Invoices'],['comms',`Communication (${detail.comms.length})`]];
     const tel = a.phone ? `<a class="btn" href="tel:${esc(digits(a.phone))}" data-log-call>Call</a>` : '';
     const mail = (a.email || detail.contacts.some(c=>c.email) || typeof MAIL!=='undefined') ? `<button class="btn" type="button" id="acEmail">Email</button>` : '';
     root().innerHTML = `
@@ -240,7 +244,7 @@ const ACCOUNTS = (()=>{
       <div class="vb-actions">${tel}${mail}<button class="btn" type="button" id="acLog">Log contact</button><button class="btn pri" type="button" id="acQuote">New quote</button></div></div>
     ${stats()}
     <div class="pf-rtabs ac-tabs">${tabs.map(([k,v])=>`<button type="button" data-actab="${k}" class="${tab===k?'on':''}">${v}</button>`).join('')}</div>
-    <div class="ac-body">${({overview:tabOverview, quotes:tabQuotes, invoices:tabInvoices, comms:tabComms}[tab]||tabOverview)()}</div>`;
+    <div class="ac-body">${({overview:tabOverview, jobs:()=>JOBS.accountHTML(detail), quotes:tabQuotes, invoices:tabInvoices, comms:tabComms}[tab]||tabOverview)()}</div>`;
     $('acBack').onclick = back;
     root().querySelectorAll('[data-actab]').forEach(b=> b.onclick = ()=> setTab(b.dataset.actab));
     $('acQuote').onclick = ()=> newQuote(null);
@@ -252,6 +256,7 @@ const ACCOUNTS = (()=>{
     };
     const call = root().querySelector('[data-log-call]'); if(call) call.addEventListener('click', ()=> setTimeout(()=>{ composer = {kind:'call', direction:'out'}; setTab('comms'); }, 300));
     wire();
+    if(tab==='jobs' && typeof JOBS!=='undefined') JOBS.wireAccount(detail, reload);
   }
 
   /* ---------- Overview: details, contacts, properties ---------- */
@@ -343,7 +348,7 @@ const ACCOUNTS = (()=>{
         return `<div class="qitem"><div class="m"><b>${q.quote_no ? noLabel(q.quote_no) : esc(q.ref)}</b><small>${esc(q.address||'')}${q.postcode?' · '+esc(q.postcode):''}</small><small>${fmtD(q.created_at)} · ${esc(q.created_by_name||'')}${q.sent_at?' · sent '+fmtD(q.sent_at):''}</small></div>
           <span class="pill ${q.status}">${QST[q.status]||q.status}</span>
           <div class="v">${gbp(q.total||0)}${admin && qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : ''}</div>
-          <div class="qacts"><button class="btn sm" type="button" data-openq="${q.id}">Open</button></div></div>`;
+          <div class="qacts">${q.status==='accepted' && typeof JOBS!=='undefined' ? `<button class="btn sm pri" type="button" data-mkjob="${q.id}">Make job</button>` : ''}<button class="btn sm" type="button" data-openq="${q.id}">Open</button></div></div>`;
       }).join('') || '<p class="hint">No quotes for this account yet.</p>'}</div></section>`;
   }
 
@@ -399,6 +404,7 @@ const ACCOUNTS = (()=>{
   /* ---------- wiring ---------- */
   function wire(){
     const a = detail.acc;
+    root().querySelectorAll('[data-mkjob]').forEach(b=> b.onclick = ()=>{ const q = detail.quotes.find(x=>x.id===b.dataset.mkjob); if(q && typeof JOBS!=='undefined'){ JOBS.startFromQuote(q); setTab('jobs'); } });
     // details form
     const form = $('acForm');
     if(form){
@@ -564,6 +570,6 @@ const ACCOUNTS = (()=>{
     if(!$('view-accounts').hidden){ back(); return; }
     cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); }catch(e){}
   }, true);
-  return {onShow, open, accNo, pickForQuote, refresh:()=>{ if(cur && detail && !$('view-accounts').hidden) reload(); }, reset:()=>{ list = []; loaded = false; cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); sessionStorage.removeItem('acTab'); }catch(e){} }};
+  return {onShow, open, accNo, pickForQuote, rerender:()=>{ if(cur && detail) renderDetail(); }, refresh:()=>{ if(cur && detail && !$('view-accounts').hidden) reload(); }, reset:()=>{ list = []; loaded = false; cur = null; detail = null; try{ sessionStorage.removeItem('acCur'); sessionStorage.removeItem('acTab'); }catch(e){} }};
 })();
 if(typeof ME!=='undefined' && ME && !document.getElementById('view-accounts').hidden) ACCOUNTS.onShow();
