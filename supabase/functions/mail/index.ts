@@ -11,7 +11,8 @@
 //   {action:"send", to, cc, subject, html, text, logText, attachments, accountId, quoteId, threadId} -> {id, threadId, from}
 //   {action:"sync"}  (x-purgo-key or staff)   -> {added}
 // GET ?code=…&state=…  Google's redirect after approving.
-import { cors, reply, serviceClient, googleConfigured, getConn, accessToken, gmail, sendMail, cleanEmails } from "../_shared/gmail.ts";
+import { cors, reply, serviceClient, googleConfigured, getConn, accessToken, gmail, sendMail, cleanEmails, gid } from "../_shared/gmail.ts";
+import { gsecret } from "../_shared/gmail.ts";
 
 const SCOPES = "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
 const OK_ORIGINS = [/^https:\/\/(portal|quote)\.purgo-clean\.com$/, /^https:\/\/([a-z0-9-]+\.)?purgo-quote\.pages\.dev$/, /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/];
@@ -121,9 +122,14 @@ Deno.serve(async (req) => {
       if (err) return go("cancelled");
       if (!code || !state || !row || row.oauth_state !== state || Date.now() - new Date(row.oauth_state_at).getTime() > 15 * 60e3) return go("expired");
       const t = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ code, client_id: Deno.env.get("GOOGLE_CLIENT_ID")!, client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET")!, redirect_uri: selfUrl(), grant_type: "authorization_code" }) });
-      const tj = await t.json();
-      if (!t.ok || !tj.refresh_token) return go("failed");
+        body: new URLSearchParams({ code, client_id: gid(), client_secret: gsecret(), redirect_uri: selfUrl(), grant_type: "authorization_code" }) });
+      const tj = await t.json().catch(() => ({}));
+      if (!t.ok || !tj.refresh_token) {
+        const why = tj.error_description || tj.error || (t.ok ? "Google didn't return long-term access" : "HTTP " + t.status);
+        console.error("mail connect failed:", t.status, tj.error, tj.error_description);
+        await db.from("mail_connection").update({ last_error: "Connecting failed: " + why, oauth_state: null }).eq("id", 1);
+        return go("failed");
+      }
       const prof = await gmail(tj.access_token, "profile");
       await db.from("mail_connection").update({ address: prof.emailAddress, refresh_token: tj.refresh_token, history_id: String(prof.historyId), connected_at: new Date().toISOString(),
         oauth_state: null, oauth_state_at: null, last_error: null }).eq("id", 1);
@@ -160,7 +166,7 @@ Deno.serve(async (req) => {
       if (!OK_ORIGINS.some(r => r.test(ret))) return reply({ error: "Unknown Portal address." }, 400);
       const state = crypto.randomUUID();
       await db.from("mail_connection").upsert({ id: 1, oauth_state: state, oauth_state_at: new Date().toISOString(), oauth_return: ret, connected_by_name: me.name });
-      const q = new URLSearchParams({ client_id: Deno.env.get("GOOGLE_CLIENT_ID")!, redirect_uri: selfUrl(), response_type: "code", scope: SCOPES,
+      const q = new URLSearchParams({ client_id: gid(), redirect_uri: selfUrl(), response_type: "code", scope: SCOPES,
         access_type: "offline", prompt: "consent", include_granted_scopes: "true", state });
       return reply({ url: "https://accounts.google.com/o/oauth2/v2/auth?" + q });
     }

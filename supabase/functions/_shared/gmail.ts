@@ -17,7 +17,10 @@ export function serviceClient(): SupabaseClient {
   return createClient(url, svc, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export const googleConfigured = () => !!(Deno.env.get("GOOGLE_CLIENT_ID") && Deno.env.get("GOOGLE_CLIENT_SECRET"));
+// the Google sign-in details (stray spaces or line breaks from copy and paste are ignored)
+export const gid = () => (Deno.env.get("GOOGLE_CLIENT_ID") ?? "").replace(/\s+/g, "");
+export const gsecret = () => (Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "").replace(/\s+/g, "");
+export const googleConfigured = () => !!(gid() && gsecret());
 
 export type Conn = { address: string | null; refresh_token: string | null; history_id: string | null; connected_at: string | null; last_sync: string | null; last_error: string | null };
 export async function getConn(db: SupabaseClient): Promise<Conn | null> {
@@ -28,7 +31,7 @@ export async function getConn(db: SupabaseClient): Promise<Conn | null> {
 export async function accessToken(conn: Conn): Promise<string> {
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: Deno.env.get("GOOGLE_CLIENT_ID")!, client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET")!, refresh_token: conn.refresh_token!, grant_type: "refresh_token" }),
+    body: new URLSearchParams({ client_id: gid(), client_secret: gsecret(), refresh_token: conn.refresh_token!, grant_type: "refresh_token" }),
   });
   const j = await r.json();
   if (!r.ok || !j.access_token) throw new Error("Google sign-in for the mailbox has expired. Reconnect it in Admin → Email. (" + (j.error_description || j.error || r.status) + ")");
