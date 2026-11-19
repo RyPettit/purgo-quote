@@ -561,7 +561,9 @@ const JOBS = (()=>{
   function guessSvc(s){ s = String(s||'').toLowerCase(); return /window/.test(s) ? 'windows' : /gutter|fascia|soffit/.test(s) ? 'gutters' : /roof|moss/.test(s) ? 'roof' : /pressure|patio|drive|jet|soft wash|render/.test(s) ? 'pressure' : 'other'; }
   function prefillFromQuote(qt){
     const groups = (qt.lines||[]).map(g=>g.name).filter(Boolean);
-    return {service:guessSvc(groups[0]||''), title:groups.join(', '), price:+qt.total||0, line:qt.address||'', postcode:qt.postcode||'', quote_id:qt.id, frequency_weeks:null};
+    const svc = guessSvc(groups[0]||''), f = ((qt.state||{}).form||{});
+    const wf = svc==='windows' && f['on-wn'] ? (+f.wnFreq || null) : null;   // window quotes say how often
+    return {service:svc, title:groups.join(', '), price:+qt.total||0, line:qt.address||'', postcode:qt.postcode||'', quote_id:qt.id, frequency_weeks:wf};
   }
   function jobForm(d, j){
     const props = d.props || [];
