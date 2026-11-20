@@ -94,7 +94,8 @@ const PORTFOLIO = (()=>{
       hrs += R.gutSetup + m/(storeys>=3 ? R.gutSpeed3 : R.gutSpeed);
     }
     const dp = num(d.downpipes);
-    if(m>0 && d.flush && dp){ const h = dp*0.05; add(`Flush & check downpipes × ${dp}`, h*crew*L, `${h.toFixed(2)}h × ${crew} × ${gbp(L)}`); hrs += h; }
+    if(m>0 && d.flush && dp){ const h = dp*5/60;   // 5 minutes a downpipe
+      add(`Flush & check downpipes × ${dp}`, h*crew*L, `${h.toFixed(2)}h × ${crew} × ${gbp(L)}`); hrs += h; }
     const gq = num(d.guards); if(gq){ add(`Downpipe guards × ${gq}`, gq*R.guard, `${gq} × ${gbp(R.guard)}`); hrs += gq*0.05; }
     const fm = num(d.fascia); if(fm){ add(`Fascia & soffit clean (${fm} m)`, fm*R.fascia, `${fm} m × ${gbp(R.fascia)}`); hrs += fm/R.fasSpeed; }
     if(m>0 && st.condHeavy!==false && (d.condition==='heavy' || d.condition==='veg')){ add('Heavy blockage / plant growth', R.cx_gtHeavy*crew*L, `${R.cx_gtHeavy}h × ${crew} × ${gbp(L)}`); hrs += R.cx_gtHeavy; }
