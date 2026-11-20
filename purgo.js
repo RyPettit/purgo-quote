@@ -849,7 +849,7 @@ function renderLock(o, today){
   if(isLocked()){
     const diff = today && Math.abs(today.total - o.total) >= 0.01;
     bar.className = 'lockbar';
-    bar.innerHTML = `<b>Prices locked</b> · ${pricing.status[0].toUpperCase()+pricing.status.slice(1)}, priced ${when}.${ROLE==='admin'?' Profit uses today\'s costs.':''}`
+    bar.innerHTML = `<b>Prices locked</b> · ${pricing.status[0].toUpperCase()+pricing.status.slice(1)}, priced ${when}.${ROLE==='admin'?' Profit uses today\'s costs.':''} You can still add discounts or change the work; it stays at these prices.`
       + (diff ? ` Today's prices would be <b>${gbp(today.total)}</b>.` : ' Today\'s prices give the same total.')
       + ` <button class="linkbtn" type="button" id="lockUpdate">Update to current prices</button>`;
   } else {
@@ -1275,7 +1275,8 @@ async function saveQuote(asNew){
     const saved = await pushQuote(item.rec, item.addr, item.costs);
     editing = {id:saved.id, ref:refStr}; quoteNo = saved.quote_no; pricing.snap = item.rec.state.pricedWith; pricing.current = false; syncEditing(); render();
     if(saved.account_id && saved.account_id!==quoteAccount) showQuoteAccount(saved.account_id);
-    flash(`Saved ${fullRef()}`);
+    const relinked = await refreshCustomerCopy(saved.id);
+    flash(relinked ? `Updated. The customer's online quote now shows ${gbp(last.total)}. Press Email quote to send them the new version.` : `Saved ${fullRef()}`);
     loadAddresses();
   }catch(e){
     if(isNetErr(e) || e.message==='offline'){
@@ -1284,6 +1285,20 @@ async function saveQuote(asNew){
     } else flash('Could not save: ' + e.message);
   }
   btn.disabled = false;
+}
+// a sent quote that's been changed (e.g. a discount added): keep the customer's online quote in step,
+// so their View and accept link shows the new price. Accepted / declined quotes keep what the customer answered.
+async function refreshCustomerCopy(id){
+  try{
+    if(pricing.status!=='sent' || !lastQuoteModel) return false;
+    const {data:q} = await sb.from('quotes').select('share_token,customer_html').eq('id', id).maybeSingle();
+    if(!q || !q.share_token || !q.customer_html) return false;
+    const html = quoteHTML(lastQuoteModel, {acceptUrl:`${location.origin}/q?t=${q.share_token}`});
+    const undated = h => h.replace(/\d{1,2}\/\d{1,2}\/\d{4}/g, '');
+    if(undated(html)===undated(q.customer_html)) return false;   // nothing changed but the date
+    const {error} = await sb.rpc('share_quote', {p_quote:id, p_html:html});
+    return !error;
+  }catch(e){ return false; }
 }
 $('saveQ').onclick = ()=> saveQuote(false);
 $('saveCopy').onclick = ()=> saveQuote(true);
