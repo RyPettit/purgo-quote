@@ -32,6 +32,8 @@ const RATE_GROUPS = [
   ['Ancillary time (hours)',[['cx_hose','Long hose/reel run'],['cx_water','No outside tap'],['cx_steps','Steps / slopes'],['cx_move','Moving cars / furniture'],['cx_weeds','Heavy weeds'],['cx_stain','Oil / rust / gum spots'],['cx_narrow','Narrow side access'],['cx_parking','Restricted parking'],['cx_gtCons','Gutters over conservatory'],['cx_gtHeavy','Heavy gutter blockage'],['cx_ind','Site induction'],['cx_bar','Barriers / pedestrians']]]
 ];
 const SURF = {block:['Block paving','sf_block',1],concrete:['Concrete','sf_concrete',0],tarmac:['Tarmac','sf_tarmac',0],stone:['Natural stone / Indian sandstone','sf_stone',1],imprint:['Imprinted concrete','sf_imprint',0],porcelain:['Porcelain','sf_porcelain',1],deck:['Decking','sf_deck',0]};
+// discount fields on each quote section: [field key, which quote group it comes off]
+const DISC = [['Pw', n=>n==='Pressure washing'], ['Gt', n=>n==='Gutters'], ['Wn', n=>n.startsWith('Windows')], ['Rf', n=>n==='Roof cleaning'], ['Cx', n=>n==='Access & site conditions']];
 const CX = [
   ['cx_hose','Hose / reel run over 30 m from van'],['cx_parking','Restricted parking / unloading'],['cx_narrow','Narrow or gated side access'],['cx_steps','Steps, slopes or levels'],
   ['cx_move','Cars, furniture or pots to move'],['cx_weeds','Heavy weeds to remove first'],['cx_stain','Oil, rust or gum spot treatment'],['cx_water','No outside tap (bring water)']
@@ -498,6 +500,21 @@ function calcNow(){
 
   noteExtras();
 
+  // Section discounts (% or £ off each service), taken off after set-up, uplifts and out-of-hours are built in
+  o.discTotal = 0;
+  DISC.forEach(([k, match])=>{
+    const v = Math.max(0, num('ds'+k+'V')); if(!v) return;
+    const g = o.groups.find(x=>x.lines.length && match(x.name)); if(!g) return;
+    const base = g.lines.reduce((s,l)=>s+l.amt,0); if(!(base>0)) return;
+    const pct = $('ds'+k+'T').value==='pct';
+    if(pct && v>100) o.warn.push(['w', `${g.name}: a discount can't be more than 100%. Taken as 100%.`]);
+    if(!pct && v>base) o.warn.push(['w', `${g.name}: the £${v} discount is more than the section price, so it's capped at ${gbp(base)}.`]);
+    const off = Math.round((pct ? base*Math.min(v,100)/100 : Math.min(v, base))*100)/100;
+    const why = $('ds'+k+'R').value.trim();
+    g.lines.push({label:`${why || 'Discount'}${pct ? ` (${+v}% off)` : ''}`, amt:-off, detail:pct ? `${+v}% off ${gbp(base)}` : `${gbp(off)} off ${gbp(base)}`, disc:true});
+    o.discTotal += off;
+  });
+
   // Travel
   const tv = travel(); o.tv = tv;
   const tg = grp('Travel');
@@ -513,7 +530,10 @@ function calcNow(){
   sub += adj;
   // commercial window cleaning has no minimum charge (shop fronts and small commercial cleans are priced as they are)
   const min = ctype==='com' ? ($('on-wn').checked ? 0 : R.minCom) : R.minRes;
-  if(sub>0 && sub<min){ line(ag, 'Minimum charge top-up', min-sub, `Minimum ${ctype==='com'?'commercial':'residential'} job ${gbp(min)}`); sub = min; }
+  // the minimum charge is judged before section discounts, so a discount always comes off the price
+  const pre = sub + o.discTotal;
+  if(pre>0 && pre<min){ line(ag, 'Minimum charge top-up', min-pre, `Minimum ${ctype==='com'?'commercial':'residential'} job ${gbp(min)}`); sub += min-pre; }
+  if(o.discTotal>0 && sub<min && sub>0) o.warn.push(['w', `Discounts bring this job to ${gbp(sub)}, under the ${gbp(min)} minimum ${ctype==='com'?'commercial':'residential'} charge.`]);
   o.sub = sub;
   o.vat = $('vatOn').checked ? sub*R.vat/100 : 0;
   o.total = sub + o.vat;
@@ -719,6 +739,7 @@ function restore(s){
   rfChems = Array.isArray(s.rfChems) ? s.rfChems.slice() : (s.form && s.form.rfChem ? [s.form.rfChem] : []);
   if(window.PURGO_MEASURE && typeof MEASURE!=='undefined') MEASURE.restore(s.measures||[]);
   renderPw(); renderRf(); renderRfChem();
+  DISC.forEach(([k])=>{ $('ds'+k+'V').value=0; $('ds'+k+'T').value='pct'; $('ds'+k+'R').value=''; });   // quotes saved before discounts existed have none
   $('email').value = ''; $('wnPrice').value = 'builder'; $('wnOwn').value = 0; $('wnFreq').value = '4';   // quotes saved before own-price existed used the builder
   Object.entries(s.form||{}).forEach(([id,v])=>{ const el=$(id); if(!el) return; if(el.type==='checkbox') el.checked=!!v; else el.value=v; });
   ramsTouched = true;   // a saved quote keeps the RAMS choice it was saved with
@@ -894,7 +915,7 @@ $('copyQ').onclick = async ()=>{
 };
 $('newJob').onclick = ()=>{
   ['cust','addr','pc','phone','email','jobNotes','gtRepD','cxOtherD','milesOv'].forEach(id=>$(id).value='');
-  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); $('wnPrice').value='builder'; $('wnFreq').value='4'; ramsTouched = false;
+  ['adj','gtM','gtGuard','gtFas','gtRep','wnCount','wnCons','wnOwn','cxOther','coPerm','otherCost'].forEach(id=>$(id).value=0); DISC.forEach(([k])=>{ $('ds'+k+'V').value=0; $('ds'+k+'T').value='pct'; $('ds'+k+'R').value=''; }); $('wnPrice').value='builder'; $('wnFreq').value='4'; ramsTouched = false;
   $('workers').value=1; ['wSetup','wCx','wPw','wGt','wWn','wRf','wTower'].forEach(id=>$(id).value=''); $('rfPos').value=1; $('coFreq').value=1;
   document.querySelectorAll('#cxList input, #gtCons, #gtHeavy, #wnFirst, #coOoh, #coInd, #coBar').forEach(c=>c.checked=false);
   pwRows=[{name:'Driveway',surf:'block',sqm:0,soil:'normal',sand:true,chems:[]}];

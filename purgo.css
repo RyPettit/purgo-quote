@@ -608,3 +608,7 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .jb-drive.short{color:#b3261e;font-weight:600}
 @media (max-width:640px){.jb-drive{padding-left:0}}
 .jb-rtag{font-size:.7rem;font-weight:700;color:#326986;background:#e6f1f7;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:middle}
+
+/* section discounts */
+.disc{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.disc .inrow select{flex:0 0 64px;width:64px}
