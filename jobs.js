@@ -565,6 +565,12 @@ const JOBS = (()=>{
     const wf = svc==='windows' && f['on-wn'] ? (+f.wnFreq || null) : null;   // window quotes say how often
     return {service:svc, title:groups.join(', '), price:+qt.total||0, line:qt.address||'', postcode:qt.postcode||'', quote_id:qt.id, frequency_weeks:wf};
   }
+  // job discounts: price is what's charged; base_price is the price before the discount
+  function jobNet(base, type, val){ base = +base||0; val = Math.max(0, +val||0); if(!val) return base;
+    const off = type==='pct' ? base*Math.min(val,100)/100 : Math.min(val, base); return Math.round((base-off)*100)/100; }
+  function discText(j){ if(!(+j.discount_value>0) || !j.discount_type) return '';
+    const what = j.discount_type==='pct' ? `${+j.discount_value}% off` : `${gbp(+j.discount_value)} off`;
+    return `${what} ${gbp(+j.base_price||0)}${j.discount_note?' · '+j.discount_note:''}`; }
   function jobForm(d, j){
     const props = d.props || [];
     const pickAddr = props.find(p=>p.id===j.address_id) || (j.line ? props.find(p=>(p.line||'').toLowerCase()===String(j.line).toLowerCase()) : null) || (!j.id && props.length===1 ? props[0] : null);
@@ -573,7 +579,10 @@ const JOBS = (()=>{
       <label class="f">Address line<input id="jfLine" value="${esc(pickAddr ? pickAddr.line||'' : j.line||'')}"></label>
       <label class="f">Postcode<input id="jfPc" value="${esc(pickAddr ? pickAddr.postcode||'' : j.postcode||'')}"></label>
       <label class="f">Service<select id="jfSvc">${Object.entries(SVC).map(([k,v])=>`<option value="${k}" ${(j.service||'windows')===k?'selected':''}>${v}</option>`).join('')}</select></label>
-      <label class="f">Price (£)<input id="jfPrice" type="number" step="0.01" min="0" inputmode="decimal" value="${j.price!=null?+j.price:''}"></label>
+      <label class="f">Price before discount (£)<input id="jfPrice" type="number" step="0.01" min="0" inputmode="decimal" value="${j.base_price!=null?+j.base_price:j.price!=null?+j.price:''}"></label>
+      <label class="f">Discount<span class="inrow"><select id="jfDT" aria-label="Discount type" style="flex:0 0 64px;width:64px"><option value="pct" ${j.discount_type!=='gbp'?'selected':''}>%</option><option value="gbp" ${j.discount_type==='gbp'?'selected':''}>£</option></select><input id="jfDV" type="number" step="0.5" min="0" inputmode="decimal" value="${+j.discount_value||0}"></span></label>
+      <label class="f">Discount reason<input id="jfDR" value="${esc(j.discount_note||'')}" placeholder="e.g. Neighbour discount"></label>
+      <div class="f"><span>Charged per visit</span><b id="jfNet" style="font-size:1.05rem;color:var(--ink)"></b></div>
       <label class="f wide">What's included<input id="jfTitle" value="${esc(j.title||'')}" placeholder="e.g. Front & back, conservatory, frames every 3rd clean"></label>
       <label class="f">How often<select id="jfFreq">${freqOpts(j)}</select></label>
       <label class="f">Next due<input id="jfDue" type="date" value="${j.next_due||''}"></label>
@@ -602,7 +611,7 @@ const JOBS = (()=>{
       ${acc.editing==='new' ? jobForm(d, acc.prefill || {}) : ''}
       ${J.jobs.map(j=> acc.editing===j.id ? jobForm(d, j) : `<div class="qitem jb-acj ${j.status}"><div class="m"><b>${esc(SVC[j.service])}${j.title?` <span class="hint">· ${esc(j.title)}</span>`:''}</b><small>JB-${j.job_no} · ${esc(where(j)||'no address')}</small>
           <small>${freqLabel(j.frequency_weeks, j.monthly)}${j.round_id?' · '+esc((rounds.find(r=>r.id===j.round_id)||{}).name||'round'):''} · ${calDot(j.calendar_id)}${esc(calName(j.calendar_id))} · <b>${j.status==='active'?dueText(j):j.status==='paused'?'Paused':'Finished'}</b></small>${j.notes?`<small>Access: ${esc(j.notes)}</small>`:''}</div>
-          <div class="v">${gbp(+j.price||0)}</div>
+          <div class="v">${gbp(+j.price||0)}${discText(j)?`<small>${esc(discText(j))}</small>`:''}</div>
           <div class="qacts">${j.status==='active' ? `<button class="btn sm pri" type="button" data-jbook="${j.id}">Book</button>` : ''}<button class="btn sm" type="button" data-jedit="${j.id}">Edit</button></div>
           ${acc.bookFor===j.id ? `<div class="fields jb-move wide"><label class="f">Date<input type="date" id="jbDate" value="${j.next_due && j.next_due>today() ? j.next_due : addDays(today(),1)}"></label><label class="f">Time<input type="time" id="jbTime"></label><label class="f">Calendar<select id="jbCal">${calOpts(j.calendar_id || (defCal()||{}).id)}</select></label>
             <div class="vb-actions wide"><button class="btn sm" type="button" id="jbCancel">Cancel</button><button class="btn sm pri" type="button" id="jbGo">Book visit</button></div></div>` : ''}</div>`).join('')}
@@ -629,13 +638,17 @@ const JOBS = (()=>{
     if($('jfAddr')) $('jfAddr').onchange = e=>{ const p = (d.props||[]).find(x=>x.id===e.target.value); if(p){ $('jfLine').value = p.line||''; $('jfPc').value = p.postcode||''; } };
     if($('jfRound')) $('jfRound').onchange = e=>{ const r = rounds.find(x=>x.id===e.target.value); if(r){ if(!$('jfFreq').value) $('jfFreq').value = r.monthly ? 'm' : String(r.frequency_weeks); if(r.calendar_id) $('jfCal').value = r.calendar_id; if($('jfSvc').value!=='windows') $('jfSvc').value = 'windows'; } };
     if($('jfSave')){
+      const showNet = ()=>{ const b = +$('jfPrice').value||0, n = jobNet(b, $('jfDT').value, $('jfDV').value);
+        $('jfNet').textContent = gbp(n) + (n<b ? ` (${gbp(b-n)} off)` : ''); };
+      ['jfPrice','jfDT','jfDV'].forEach(id=>{ $(id).addEventListener('input', showNet); $(id).addEventListener('change', showNet); }); showNet();
       $('jfCancel').onclick = ()=>{ acc.editing = null; acc.prefill = null; again(true); };
       $('jfSave').onclick = async ()=>{
         const id = acc.editing, old = J.jobs.find(x=>x.id===id) || {};
         const v = {account_id:d.acc.id, address_id:($('jfAddr')||{}).value||null, line:$('jfLine').value.trim()||null, postcode:fmtPc($('jfPc').value)||null,
-          service:$('jfSvc').value, title:$('jfTitle').value.trim()||null, price:+$('jfPrice').value||0, ...readFreq($('jfFreq').value),
+          service:$('jfSvc').value, title:$('jfTitle').value.trim()||null, ...jobPrice(), ...readFreq($('jfFreq').value),
           next_due:$('jfDue').value||null, round_id:$('jfRound').value||null, calendar_id:$('jfCal').value||null, duration_min:Math.max(5, +$('jfDur').value||30), notes:$('jfNotes').value.trim()||null};
         if($('jfStatus')) v.status = $('jfStatus').value;
+        if(v.discount_type==='pct' && v.discount_value>100){ flash('A discount can\'t be more than 100%'); return; }
         if(!v.line && !v.postcode){ flash('Add the address for this job'); return; }
         if(!(v.price>0) && !confirmInline('jf0', 'No price set. Press Save again to save it at £0.')) return;
         if(v.round_id && v.round_id!==old.round_id){ v.round_order = jobs.filter(j=>j.round_id===v.round_id).length + 1; }
@@ -654,6 +667,10 @@ const JOBS = (()=>{
         kick(); acc.editing = null; loaded = false; await again(); };
     }
     wireVisitActions(async soft=>{ if(soft===true) return again(true); loaded = false; await again(); }, el);
+  }
+  function jobPrice(){
+    const base = Math.round((+$('jfPrice').value||0)*100)/100, val = Math.max(0, +$('jfDV').value||0), type = $('jfDT').value;
+    return {base_price:base, price:jobNet(base, type, val), discount_type:val ? type : null, discount_value:val, discount_note:val ? ($('jfDR').value.trim()||null) : null};
   }
   function startFromQuote(qt){ acc.editing = 'new'; acc.prefill = prefillFromQuote(qt); acc.bookFor = null; }
   function resetAccount(){ acc = {editing:null, prefill:null, bookFor:null}; moving = null; }

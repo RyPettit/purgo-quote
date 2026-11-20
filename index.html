@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=e2d8829575">
+<link rel="stylesheet" href="purgo.css?v=880968bd73">
 </head>
 <body>
 <header class="topbar">
@@ -129,6 +129,7 @@
           <div class="fields" style="margin-bottom:12px"><label class="f">Workers<input id="wPw" type="number" min="1" max="6" placeholder="whole crew"></label></div>
           <div class="rows" id="pwRows"></div>
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm" type="button" id="addPw">+ Add area</button></div>
+          <div class="fields disc"><label class="f">Pressure washing discount<span class="inrow"><select id="dsPwT" aria-label="Discount type"><option value="pct">%</option><option value="gbp">£</option></select><input id="dsPwV" type="number" min="0" step="0.5" value="0" inputmode="decimal"></span></label><label class="f">Reason (shown on quote)<input id="dsPwR" placeholder="e.g. Loyalty discount"></label></div>
           <p class="hint">£<span data-r="pwRate"></span>/m² all-in: set-up, wash, slurry removal and pack-down. Minimum £<span data-r="pwMin"></span>. Heavy soiling adds £<span data-r="heavySoil"></span>/m². Sand and chemicals are charged on top.</p>
         </div>
       </section>
@@ -150,6 +151,7 @@
             <label class="ck"><input type="checkbox" id="gtCons">Working over conservatory / extension <small>+<span data-r="cx_gtCons"></span>h</small></label>
             <label class="ck"><input type="checkbox" id="gtHeavy">Heavy blockage / plant growth <small>+<span data-r="cx_gtHeavy"></span>h</small></label>
           </div>
+          <div class="fields disc"><label class="f">Gutters discount<span class="inrow"><select id="dsGtT" aria-label="Discount type"><option value="pct">%</option><option value="gbp">£</option></select><input id="dsGtV" type="number" min="0" step="0.5" value="0" inputmode="decimal"></span></label><label class="f">Reason (shown on quote)<input id="dsGtR" placeholder="e.g. Loyalty discount"></label></div>
           <p class="hint">SkyVac Nitro with 12 m pole. Covers camera survey and clear only.</p>
         </div>
       </section>
@@ -173,6 +175,7 @@
             <label class="ck"><input type="checkbox" id="wnSills" checked>Sills &amp; doors</label>
             <label class="ck"><input type="checkbox" id="wnFirst">First / one-off clean (build-up) <small>+<span data-r="firstClean"></span>%</small></label>
           </div>
+          <div class="fields disc"><label class="f">Windows discount<span class="inrow"><select id="dsWnT" aria-label="Discount type"><option value="pct">%</option><option value="gbp">£</option></select><input id="dsWnV" type="number" min="0" step="0.5" value="0" inputmode="decimal"></span></label><label class="f">Reason (shown on quote)<input id="dsWnR" placeholder="e.g. Loyalty discount"></label></div>
           <p class="hint" id="wnHint"></p>
         </div>
       </section>
@@ -193,6 +196,7 @@
             <div class="f chemf" id="rfChemBox"></div>
           </div>
           <p class="hint">Anything over one storey uses the scaffold tower: erect/dismantle labour plus £<span data-r="towerDay"></span> per day.</p>
+          <div class="fields disc"><label class="f">Roof cleaning discount<span class="inrow"><select id="dsRfT" aria-label="Discount type"><option value="pct">%</option><option value="gbp">£</option></select><input id="dsRfV" type="number" min="0" step="0.5" value="0" inputmode="decimal"></span></label><label class="f">Reason (shown on quote)<input id="dsRfR" placeholder="e.g. Loyalty discount"></label></div>
           <div id="rfWarn"></div>
         </div>
       </section>
@@ -206,6 +210,7 @@
           <label class="f">Other ancillary time (hours)<input id="cxOther" type="number" min="0" step="0.25" value="0"></label>
           <label class="f wide">Reason<input id="cxOtherD" placeholder="e.g. hand clean around planters"></label>
         </div>
+        <div class="fields disc"><label class="f">Access &amp; site conditions discount<span class="inrow"><select id="dsCxT" aria-label="Discount type"><option value="pct">%</option><option value="gbp">£</option></select><input id="dsCxV" type="number" min="0" step="0.5" value="0" inputmode="decimal"></span></label><label class="f">Reason (shown on quote)<input id="dsCxR" placeholder="e.g. Loyalty discount"></label></div>
         <div id="comBox" hidden>
           <h3>Commercial</h3>
           <div class="checks">
@@ -416,12 +421,12 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=1d877ec2db"></script>
+<script src="purgo.js?v=8fc2ceb70d"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=02f2b248ee"></script>
 <script src="mail.js?v=889da193d1"></script>
 <script src="accounts.js?v=8c7be188cf"></script>
-<script src="jobs.js?v=f2d7192f16"></script>
+<script src="jobs.js?v=fa1df10acf"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>
