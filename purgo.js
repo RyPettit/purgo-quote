@@ -1115,6 +1115,8 @@ function adminOpen(sec){
 }
 document.querySelectorAll('#admHome [data-sec]').forEach(b=> b.onclick = ()=>{ location.hash = '#admin/' + b.dataset.sec; });
 $('admBack').onclick = ()=>{ location.hash = '#admin'; };
+// the logo goes to Home (customers to their portal); already there, it refreshes the dashboard
+document.querySelector('.topbar .brand').onclick = e=>{ e.preventDefault(); if(!ME) return; if(location.hash==='#home' && typeof HOME!=='undefined'){ HOME.refresh(true); window.scrollTo(0,0); } else show('home'); };
 
 function show(view, sub){
   if(ROLE==='customer' && view!=='login') view = 'portal';           // customers only ever see their portal
