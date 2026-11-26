@@ -559,9 +559,17 @@ const JOBS = (()=>{
     return {jobs:j.data, visits:v.data};
   }
   function guessSvc(s){ s = String(s||'').toLowerCase(); return /window/.test(s) ? 'windows' : /gutter|fascia|soffit/.test(s) ? 'gutters' : /roof|moss/.test(s) ? 'roof' : /pressure|patio|drive|jet|soft wash|render/.test(s) ? 'pressure' : 'other'; }
-  function prefillFromQuote(qt){
+  // names: the quote sections this job is for (all of them when not given); withFixed: include travel/access
+  function prefillFromQuote(qt, names, withFixed){
+    const f = ((qt.state||{}).form||{});
+    if(names && names.length){
+      const opt = optionsOf(qt), p = pickPrice(opt, names, withFixed);
+      const svc = guessSvc(names[0]), wf = names.some(n=>/^Windows/.test(n)) && f['on-wn'] ? (+f.wnFreq || null) : null;
+      return {service:svc, title:names.join(', '), price:p.total, line:qt.address||'', postcode:qt.postcode||'', quote_id:qt.id, frequency_weeks:wf,
+        quote_sections: p.all ? null : names};
+    }
     const groups = (qt.lines||[]).map(g=>g.name).filter(Boolean);
-    const svc = guessSvc(groups[0]||''), f = ((qt.state||{}).form||{});
+    const svc = guessSvc(groups[0]||'');
     const wf = svc==='windows' && f['on-wn'] ? (+f.wnFreq || null) : null;   // window quotes say how often
     return {service:svc, title:groups.join(', '), price:+qt.total||0, line:qt.address||'', postcode:qt.postcode||'', quote_id:qt.id, frequency_weeks:wf};
   }
@@ -653,7 +661,7 @@ const JOBS = (()=>{
         if(!(v.price>0) && !confirmInline('jf0', 'No price set. Press Save again to save it at £0.')) return;
         if(v.round_id && v.round_id!==old.round_id){ v.round_order = jobs.filter(j=>j.round_id===v.round_id).length + 1; }
         if(!v.round_id) v.round_order = null;
-        if(id==='new'){ v.created_by_name = ME.name; if(acc.prefill && acc.prefill.quote_id) v.quote_id = acc.prefill.quote_id; }
+        if(id==='new'){ v.created_by_name = ME.name; if(acc.prefill && acc.prefill.quote_id){ v.quote_id = acc.prefill.quote_id; if(acc.prefill.quote_sections) v.quote_sections = acc.prefill.quote_sections; } }
         $('jfSave').disabled = true;
         const r = id==='new' ? await sb.from('jobs').insert(v) : await sb.from('jobs').update(v).eq('id', id);
         if(r.error){ flash('Could not save: ' + r.error.message); $('jfSave').disabled = false; return; }
@@ -672,7 +680,7 @@ const JOBS = (()=>{
     const base = Math.round((+$('jfPrice').value||0)*100)/100, val = Math.max(0, +$('jfDV').value||0), type = $('jfDT').value;
     return {base_price:base, price:jobNet(base, type, val), discount_type:val ? type : null, discount_value:val, discount_note:val ? ($('jfDR').value.trim()||null) : null};
   }
-  function startFromQuote(qt){ acc.editing = 'new'; acc.prefill = prefillFromQuote(qt); acc.bookFor = null; }
+  function startFromQuote(qt, names, withFixed){ acc.editing = 'new'; acc.prefill = prefillFromQuote(qt, names, withFixed); acc.bookFor = null; }
   function resetAccount(){ acc = {editing:null, prefill:null, bookFor:null}; moving = null; }
 
   return {onShow, refresh, loadAccount, accountHTML, wireAccount, startFromQuote, resetAccount, kick,

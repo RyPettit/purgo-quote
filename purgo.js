@@ -534,7 +534,7 @@ function calcNow(){
   const pre = sub + o.discTotal;
   if(pre>0 && pre<min){ line(ag, 'Minimum charge top-up', min-pre, `Minimum ${ctype==='com'?'commercial':'residential'} job ${gbp(min)}`); sub += min-pre; }
   if(o.discTotal>0 && sub<min && sub>0) o.warn.push(['w', `Discounts bring this job to ${gbp(sub)}, under the ${gbp(min)} minimum ${ctype==='com'?'commercial':'residential'} charge.`]);
-  o.sub = sub;
+  o.sub = sub; o.min = min; o.vatRate = $('vatOn').checked ? R.vat : 0;
   o.vat = $('vatOn').checked ? sub*R.vat/100 : 0;
   o.total = sub + o.vat;
   o.W = crew;
@@ -651,7 +651,7 @@ function syncNotesBox(std){
 }
 const ACCEPT_TITLE = 'How to accept this quote';
 const ACCEPT_TEXT = 'Just reply to the email you got this quote from and confirm any services you would like to book. Alternatively, if you would like to discuss any of the quoted work, please contact us on 07930 877034.';
-const ACCEPT_ONLINE = 'Press the button to accept this quote online in a couple of clicks, or just reply to the email. If you would like to discuss any of the quoted work, please call us on 07930 877034.';
+const ACCEPT_ONLINE = 'Press the button to accept this quote online in a couple of clicks (you can choose just some of the services), or just reply to the email. If you would like to discuss any of the quoted work, please call us on 07930 877034.';
 function quoteModel(o){
   const groups = o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:l.amt})), sub:g.lines.reduce((s,l)=>s+l.amt,0)}));
   const std = standardNotes(o); syncNotesBox(std);
@@ -711,6 +711,88 @@ function quoteText(m, opts){
   return L.join('\n');
 }
 let lastQuoteModel = null;
+
+/* ---------- choosing part of a quote ----------
+   Customers can accept some services and not others (e.g. windows and gutters but not the pressure washing),
+   and staff can make a job from some sections only. Each service section keeps its own price; shared charges
+   (travel, access, commercial) come with any choice, the minimum charge still applies, then VAT.
+   The same sums run in the customer's online quote (q.html) and the quote-public function. */
+const SECTION_RX = /^(Pressure washing|Gutters|Roof cleaning|Windows)/;
+const TOPUP = 'Minimum charge top-up';
+function quoteOptions(o){
+  const r2 = round2, sections = [], fixed = []; let adj = 0;
+  o.groups.filter(g=>g.lines.length).forEach(g=>{
+    if(g.name==='Adjustments'){ g.lines.forEach(l=>{ if(l.label!==TOPUP) adj += l.amt; }); return; }
+    const sub = g.lines.reduce((s,l)=>s+l.amt,0), pre = g.lines.reduce((s,l)=>s+(l.disc?0:l.amt),0);
+    (SECTION_RX.test(g.name) ? sections : fixed).push({name:g.name, sub:r2(sub), pre:r2(pre)});
+  });
+  return {v:1, sections, fixed, adj:r2(adj), min:r2(o.min||0), vatRate:o.vatRate||0, sub:r2(o.sub), vat:r2(o.vat), total:r2(o.total)};
+}
+// options for a saved quote; quotes saved before this existed are worked out from their lines
+function optionsOf(q){
+  if(q && q.options && q.options.sections) return q.options;
+  const r2 = round2, sections = [], fixed = []; let adj = 0;
+  (q && q.lines || []).forEach(g=>{
+    if(g.name==='Adjustments'){ (g.lines||[]).forEach(l=>{ if(l.label!==TOPUP) adj += +l.amt||0; }); return; }
+    const sub = (g.lines||[]).reduce((s,l)=>s+(+l.amt||0),0);
+    (SECTION_RX.test(g.name) ? sections : fixed).push({name:g.name, sub:r2(sub), pre:r2(sub)});
+  });
+  const total = +q.total||0, vat = +q.vat||0, sub = q.sub!=null ? +q.sub : total-vat;
+  return {v:0, sections, fixed, adj:r2(adj), min:q.job_type==='com' ? 0 : (R.minRes||0), vatRate: vat>0 && sub>0 ? Math.round(vat/sub*1000)/10 : 0, sub:r2(sub), vat:r2(vat), total:r2(total)};
+}
+// price for some sections; withFixed false leaves out travel/access (already charged on another job from this quote)
+function pickPrice(opt, names, withFixed){
+  const ch = opt.sections.filter(s=>names.includes(s.name));
+  if(ch.length===opt.sections.length && withFixed!==false) return {sub:opt.sub, vat:opt.vat, total:opt.total, all:true};
+  const fx = withFixed===false ? [] : opt.fixed, sum = (a,k)=>a.reduce((t,x)=>t+(+x[k]||0),0);
+  let sub = sum(ch,'sub') + sum(fx,'sub') + opt.adj; const pre = sum(ch,'pre') + sum(fx,'pre') + opt.adj;
+  if(pre>0 && pre<opt.min) sub += opt.min - pre;
+  sub = Math.max(0, round2(sub)); const vat = round2(sub*(opt.vatRate||0)/100);
+  return {sub, vat, total:round2(sub+vat), all:false};
+}
+const acceptedNames = q => Array.isArray(q.accepted_sections) && q.accepted_sections.length ? q.accepted_sections : null;
+const wonTotal = q => q.status==='accepted' ? (acceptedNames(q) && q.accepted_total!=null ? +q.accepted_total : +q.total||0) : 0;
+// pick sections in a dialog. Resolves to the chosen names, or null if cancelled.
+function pickSections(q, o){
+  o = o || {};
+  return new Promise(resolve=>{
+    const opt = optionsOf(q), done = new Set(o.done||[]);
+    const pre = new Set(o.preset || opt.sections.map(s=>s.name));
+    const dlg = document.createElement('dialog'); dlg.className = 'ac-dlg';
+    dlg.innerHTML = `<h2>${esc(o.title||'Choose the work')}</h2>${o.intro?`<p class="hint">${esc(o.intro)}</p>`:''}
+      <div class="sec-pick">${opt.sections.map((s,i)=>`<label class="ck sec-row${done.has(s.name)?' off':''}"><input type="checkbox" data-sec="${i}" ${pre.has(s.name)&&!done.has(s.name)?'checked':''} ${done.has(s.name)?'disabled':''}><span>${esc(s.name)}${done.has(s.name)?' <small>(already a job)</small>':''}</span><b>${gbp(s.sub)}</b></label>`).join('')}</div>
+      ${opt.fixed.length ? `<p class="hint" data-fx>${esc(opt.fixed.map(f=>f.name).join(', '))} (${gbp(opt.fixed.reduce((t,f)=>t+f.sub,0))}) ${o.fixedNote||'comes with any of the work.'}</p>` : ''}
+      <div class="sec-tot"><span>Total${opt.vatRate?' inc VAT':''}</span><b data-tot></b></div>
+      <p class="err" data-err hidden>Tick at least one.</p>
+      <div class="vb-actions" style="margin-top:14px"><button class="btn" type="button" data-x>Cancel</button><button class="btn pri" type="button" data-ok>${esc(o.ok||'Save')}</button></div>`;
+    document.body.appendChild(dlg);
+    const names = ()=> [...dlg.querySelectorAll('[data-sec]:checked')].map(b=>opt.sections[+b.dataset.sec].name);
+    const upd = ()=>{ const n = names(); dlg.querySelector('[data-tot]').textContent = n.length ? gbp(pickPrice(opt, n, o.withFixed).total) : '—'; dlg.querySelector('[data-err]').hidden = true; };
+    dlg.querySelectorAll('[data-sec]').forEach(b=> b.onchange = upd); upd();
+    const fin = v=>{ dlg.close(); dlg.remove(); resolve(v); };
+    dlg.querySelector('[data-ok]').onclick = ()=>{ const n = names(); if(!n.length){ dlg.querySelector('[data-err]').hidden = false; return; } fin(n); };
+    dlg.querySelector('[data-x]').onclick = ()=> fin(null);
+    dlg.addEventListener('cancel', e=>{ e.preventDefault(); fin(null); });
+    dlg.showModal();
+  });
+}
+// staff record which parts the customer accepted (e.g. they replied by email). Returns true when saved.
+async function setAcceptedWork(q){
+  const opt = optionsOf(q);
+  const names = await pickSections(q, {title:'Which work did they accept?', intro:'Untick anything the customer doesn\'t want. The quote stays as it was sent; this records what they said yes to.', preset:acceptedNames(q)||undefined, ok:'Mark as accepted'});
+  if(!names) return false;
+  const p = pickPrice(opt, names), all = names.length===opt.sections.length;
+  const upd = {status:'accepted', follow_up_at:null, accepted_sections: all ? null : names, accepted_total: all ? null : p.total};
+  if(!q.accepted_at) upd.accepted_at = new Date().toISOString();
+  const {error} = await sb.from('quotes').update(upd).eq('id', q.id);
+  if(error){ flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return false; }
+  Object.assign(q, upd);
+  const l = quotes.find(x=>x.id===q.id); if(l){ Object.assign(l, upd); LS.set('purgoQuotes', quotes); }
+  if(editing && editing.id===q.id){ pricing.status = 'accepted'; render(); }
+  renderFollowUps(); renderQuoteList();
+  flash(all ? 'Marked as accepted: all of the work' : `Marked as accepted: ${names.join(', ')} (${gbp(p.total)})`);
+  return true;
+}
 function renderCustomerQuote(o){
   lastQuoteModel = quoteModel(o);
   $('qPreview').innerHTML = quoteHTML(lastQuoteModel);
@@ -1234,7 +1316,7 @@ function buildRecord(o, ref){
   const rec = {ref, customer:$('cust').value.trim(), address:line, postcode:pc, phone:$('phone').value.trim(), email:$('email').value.trim(), job_type:ctype,
     sub:round2(o.sub), vat:round2(o.vat), total:round2(o.total),
     lines:o.groups.filter(g=>g.lines.length).map(g=>({name:g.name, lines:g.lines.map(l=>({label:l.label, amt:round2(l.amt)}))})),
-    state:snapshot(), created_by_name:ME.name};
+    options:quoteOptions(o), state:snapshot(), created_by_name:ME.name};
   if(quoteAccount) rec.account_id = quoteAccount;
   const addr = {key:slug(normPc(pc)+'-'+line), line, postcode:pc, customer:rec.customer, phone:rec.phone, email:rec.email, notes:$('jobNotes').value.trim(), lat:loc?loc.lat:null, lng:loc?loc.lng:null, last_quoted:now};
   if(quoteAccount) addr.account_id = quoteAccount;
@@ -1310,7 +1392,7 @@ async function loadQuotes(){
   quotesLoading = true; renderQuoteList();
   if(!sb || !navigator.onLine){ if(!quotesLoaded) quotes = LS.get('purgoQuotes', []); renderQuoteList(); return; }
   try{
-    const sel = 'id,ref,quote_no,status,customer,address,postcode,phone,email,total,created_at,created_by,created_by_name,sent_at,follow_up_at,follow_up_count,last_follow_up,viewed_at,accepted_at,accepted_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
+    const sel = 'id,ref,quote_no,status,customer,address,postcode,phone,email,total,created_at,created_by,created_by_name,sent_at,follow_up_at,follow_up_count,last_follow_up,viewed_at,accepted_at,accepted_name,accepted_sections,accepted_total,lines,options,sub,vat,job_type' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '');
     const {data, error} = await sb.from('quotes').select(sel).order('created_at', {ascending:false}).limit(500);
     if(error) throw error;
     quotes = data; quotesLoaded = true; LS.set('purgoQuotes', quotes);
@@ -1335,7 +1417,7 @@ function renderQuoteList(){
     const prof = ROLE==='admin' ? (qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : `<small style="display:block;color:var(--muted);font-size:.72rem">open for profit</small>`) : '';
     const status = x.queued ? '<span class="pill queued">Waiting</span>' :
       `<select data-status="${x.id}" aria-label="Status">${['draft','sent','accepted','declined'].map(s=>`<option value="${s}" ${s===x.status?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select>`;
-    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small>${x.status==='sent' && x.follow_up_at ? `<small class="fu-next">${new Date(x.follow_up_at)<=new Date() ? 'Follow-up due' : 'Follow up '+fmtDay(x.follow_up_at)}${x.follow_up_count?` · followed up ${x.follow_up_count}×`:''}</small>` : ''}${x.accepted_name ? `<small class="fu-next ok">Accepted online by ${esc(x.accepted_name)}</small>` : x.viewed_at && x.status==='sent' ? `<small class="fu-next">Customer opened it ${fmtDay(x.viewed_at)}</small>` : ''}<small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts"><button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
+    return `<div class="qitem"><div class="m"><b>${esc(x.customer||x.address||x.ref)}</b><small>${esc(x.address||'')}${x.postcode?' · '+esc(x.postcode):''}</small>${x.status==='sent' && x.follow_up_at ? `<small class="fu-next">${new Date(x.follow_up_at)<=new Date() ? 'Follow-up due' : 'Follow up '+fmtDay(x.follow_up_at)}${x.follow_up_count?` · followed up ${x.follow_up_count}×`:''}</small>` : ''}${x.status==='accepted' && acceptedNames(x) ? `<small class="fu-next ok">Accepted only: ${esc(acceptedNames(x).join(', '))} · ${gbp(x.accepted_total)}${x.accepted_name?' (online, '+esc(x.accepted_name)+')':''}</small>` : x.accepted_name ? `<small class="fu-next ok">Accepted online by ${esc(x.accepted_name)}</small>` : x.viewed_at && x.status==='sent' ? `<small class="fu-next">Customer opened it ${fmtDay(x.viewed_at)}</small>` : ''}<small>${x.quote_no ? noLabel(x.quote_no) : 'Number given on upload'} · ${x.created_at?new Date(x.created_at).toLocaleDateString('en-GB'):''} · ${esc(x.created_by_name||'')}</small></div>${status}<div class="v">${gbp(x.total||0)}${prof}</div><div class="qacts">${!x.queued && (x.status==='sent'||x.status==='accepted') && optionsOf(x).sections.length>1 ? `<button class="btn sm" type="button" data-accwork="${x.id}">${x.status==='accepted'?'Accepted work':'Part accept'}</button>` : ''}<button class="btn sm" type="button" ${x.queued?`data-openq-local="${esc(x.ref)}"`:`data-openq="${x.id}"`}>Open</button>${x.queued ? `<button class="btn sm del" type="button" data-delq-local="${esc(x.ref)}">Delete</button>` : (ROLE==='admin' ? `<button class="btn sm del" type="button" data-delq="${x.id}">Delete</button>` : '')}</div></div>`;
   }).join('') : `<p class="hint">${quotesLoading && !quotes.length ? 'Loading saved quotes…' : quotes.length ? 'No quotes match the search or filters above.' : quotesErr ? '' : 'No saved quotes yet. Quotes appear here once someone saves one.'}</p>`;
   if(quotesErr) $('qList').insertAdjacentHTML('afterbegin', `<p class="note w">${esc(quotesErr)} <button class="btn sm" type="button" onclick="loadQuotes()">Try again</button></p>`);
 }
@@ -1347,6 +1429,7 @@ async function setQuoteStatus(id, st, quiet){
   const q0 = fresh.data || quotes.find(x=>x.id===id) || {}, upd = {status:st};
   if(st==='sent'){ if(!q0.sent_at) upd.sent_at = new Date().toISOString(); if(!q0.follow_up_at || q0.status!=='sent') upd.follow_up_at = q0.follow_up_at && q0.status==='sent' ? q0.follow_up_at : addDays(R.fuFirst||3); }
   else upd.follow_up_at = null;   // accepted, declined or back to draft: no more reminders
+  if(st!=='accepted'){ upd.accepted_sections = null; upd.accepted_total = null; }
   // a quote sent before prices were remembered: remember today's prices now so it stays fixed from here on
   if(st!=='draft' && q0.state && !q0.state.pricedWith) upd.state = Object.assign({}, q0.state, {pricedWith:priceSnap()});
   const {error} = await sb.from('quotes').update(upd).eq('id', id);
@@ -1359,7 +1442,14 @@ async function setQuoteStatus(id, st, quiet){
 }
 document.addEventListener('change', async e=>{
   const id = e.target.dataset && e.target.dataset.status; if(!id) return;
+  const q = quotes.find(x=>x.id===id);
+  // accepting a quote with more than one service: ask which parts (all ticked to start)
+  if(e.target.value==='accepted' && q && optionsOf(q).sections.length>1){ if(!(await setAcceptedWork(q))) renderQuoteList(); return; }
   await setQuoteStatus(id, e.target.value);
+});
+document.addEventListener('click', async e=>{
+  const b = e.target.closest('[data-accwork]'); if(!b) return;
+  const q = quotes.find(x=>x.id===b.dataset.accwork); if(q) await setAcceptedWork(q);
 });
 document.addEventListener('click', async e=>{
   const b = e.target.closest('[data-openq],[data-openq-local]'); if(!b) return;

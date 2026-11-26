@@ -612,3 +612,10 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 /* section discounts */
 .disc{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
 .disc .inrow select{flex:0 0 64px;width:64px}
+/* choosing part of a quote */
+.sec-pick{display:flex;flex-direction:column;gap:6px;margin:12px 0 8px}
+.sec-row{display:flex!important;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.sec-row span{flex:1}.sec-row b{font-variant-numeric:tabular-nums}
+.sec-row.off{opacity:.55;cursor:default}
+.sec-tot{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);padding-top:10px;margin-top:6px}
+.sec-tot b{font-size:1.25rem}
