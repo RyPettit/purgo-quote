@@ -22,7 +22,7 @@ const DEF = {
 };
 const RATE_GROUPS = [
   ['Follow-ups',[['fuFirst','First follow-up, days after sending'],['fuAgain','Then follow up again every (days)']]],
-  ['Labour & margin',[['labour','Ancillary labour charged £/hr per worker'],['labourPaid','Labour paid £/hr per worker'],['targetMargin','Target margin %'],['dayHours','Working day (hours)'],['minRes','Minimum charge, residential £'],['minCom','Minimum charge, commercial £'],['vat','VAT %']]],
+  ['Labour & margin',[['labour','Ancillary labour charged £/hr per worker'],['labourPaid','Labour paid £/hr per worker'],['targetMargin','Target margin %'],['dayHours','Working day (hours)'],['minRes','Minimum charge, residential £ (not windows-only jobs)'],['minCom','Minimum charge, commercial £'],['vat','VAT %']]],
   ['Travel & fuel',[['freeMiles','Free travel radius (miles)'],['perMile','Travel charge £/mile beyond radius'],['roadFactor','Road distance factor'],['avgMph','Average travel speed mph'],['vanMpg','Van mpg (Transit Custom)'],['rigLph','Pressure washer petrol L/hr']]],
   ['Pressure washing',[['pwRate','Wash & slurry £/m²'],['heavySoil','Heavy soiling uplift £/m²'],['pwMin','Pressure washing minimum £'],['pwSetupTime','Set-up & pack-down time (h, not billed)'],['sf_block','Block paving m²/hr'],['sf_concrete','Concrete m²/hr'],['sf_tarmac','Tarmac m²/hr'],['sf_stone','Natural stone m²/hr'],['sf_imprint','Imprinted concrete m²/hr'],['sf_porcelain','Porcelain m²/hr'],['sf_deck','Decking m²/hr']]],
   ['Sand',[['sandBag','Kiln sand 25kg bag £'],['sandCover','m² per bag (refill)'],['sandRate','Sand brushing m²/hr per worker'],['sandMarkup','Sand markup %']]],
@@ -528,8 +528,9 @@ function calcNow(){
   const ag = grp('Adjustments');
   if(adj) line(ag, adj<0?'Discount':'Adjustment', adj);
   sub += adj;
-  // commercial window cleaning has no minimum charge (shop fronts and small commercial cleans are priced as they are)
-  const min = ctype==='com' ? ($('on-wn').checked ? 0 : R.minCom) : R.minRes;
+  // window cleaning has no minimum charge: commercial jobs with windows, and residential jobs that are windows only
+  const winOnly = $('on-wn').checked && !$('on-pw').checked && !$('on-gt').checked && !$('on-rf').checked;
+  const min = ctype==='com' ? ($('on-wn').checked ? 0 : R.minCom) : (winOnly ? 0 : R.minRes);
   // the minimum charge is judged before section discounts, so a discount always comes off the price
   const pre = sub + o.discTotal;
   if(pre>0 && pre<min){ line(ag, 'Minimum charge top-up', min-pre, `Minimum ${ctype==='com'?'commercial':'residential'} job ${gbp(min)}`); sub += min-pre; }
@@ -746,7 +747,8 @@ function pickPrice(opt, names, withFixed){
   if(ch.length===opt.sections.length && withFixed!==false) return {sub:opt.sub, vat:opt.vat, total:opt.total, all:true};
   const fx = withFixed===false ? [] : opt.fixed, sum = (a,k)=>a.reduce((t,x)=>t+(+x[k]||0),0);
   let sub = sum(ch,'sub') + sum(fx,'sub') + opt.adj; const pre = sum(ch,'pre') + sum(fx,'pre') + opt.adj;
-  if(pre>0 && pre<opt.min) sub += opt.min - pre;
+  const min = ch.every(s=>/^Windows/.test(s.name)) ? 0 : opt.min;   // windows on their own have no minimum
+  if(pre>0 && pre<min) sub += min - pre;
   sub = Math.max(0, round2(sub)); const vat = round2(sub*(opt.vatRate||0)/100);
   return {sub, vat, total:round2(sub+vat), all:false};
 }

@@ -118,7 +118,8 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:24px}
     if(ch.length===c.sections.length) return c.total;
     const sum = (a,k)=>a.reduce((t,x)=>t+(+x[k]||0),0);
     let sub = sum(ch,'sub') + sum(c.fixed,'sub') + c.adj; const pre = sum(ch,'pre') + sum(c.fixed,'pre') + c.adj;
-    if(pre>0 && pre<c.min) sub += c.min - pre;
+    const min = ch.every(s=>/^Windows/.test(s.name)) ? 0 : c.min;   // windows on their own have no minimum
+    if(pre>0 && pre<min) sub += min - pre;
     sub = Math.max(0, r2(sub)); return r2(sub + r2(sub*(c.vatRate||0)/100));
   }
   const picked = () => [...document.querySelectorAll('#secs input:checked')].map(i=>i.value);

@@ -33,7 +33,8 @@ function pickPrice(o: Opt, names: string[]) {
   if (ch.length === o.sections.length) return { sub: o.sub, vat: o.vat, total: o.total, all: true };
   const sum = (a: Sec[], k: "sub" | "pre") => a.reduce((t, x) => t + (+x[k] || 0), 0);
   let sub = sum(ch, "sub") + sum(o.fixed, "sub") + o.adj; const pre = sum(ch, "pre") + sum(o.fixed, "pre") + o.adj;
-  if (pre > 0 && pre < o.min) sub += o.min - pre;
+  const min = ch.every((s) => /^Windows/.test(s.name)) ? 0 : o.min;   // windows on their own have no minimum
+  if (pre > 0 && pre < min) sub += min - pre;
   sub = Math.max(0, r2(sub)); const vat = r2(sub * (o.vatRate || 0) / 100);
   return { sub, vat, total: r2(sub + vat), all: false };
 }
