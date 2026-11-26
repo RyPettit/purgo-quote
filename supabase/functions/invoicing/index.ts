@@ -190,6 +190,7 @@ async function sageSync(db: Db) {
   if (!sageConfigured() || !conn.refresh_token) return { connected: false };
   if (!conn.sales_ledger_id || !conn.tax_none_id) return { connected: true, waiting: "Choose the Sage accounts in Admin → Invoicing." };
   const tok = await sageToken(db, conn);
+  if (!conn.card_account_id) { try { await ensureCardAccount(db, tok, conn); } catch (e) { console.error("card account", (e as Error).message); } }
   let invoices = 0, payments = 0, failed = 0;
   const { data: dirty } = await db.from("invoices").select("*").eq("sage_dirty", true).neq("status", "draft").order("invoice_no").limit(100);
   for (const inv of dirty || []) {
@@ -205,6 +206,27 @@ async function sageSync(db: Db) {
   const received = await pullPayments(db, tok, conn);
   await db.from("accounting_connection").update({ last_sync: new Date().toISOString(), last_error: failed ? `${failed} item${failed > 1 ? "s" : ""} couldn't be copied to Sage: see the invoice for why.` : null }).eq("id", 1);
   return { connected: true, invoices, payments, received, failed };
+}
+
+// card payments (Stripe) go into their own Sage bank account, "Stripe": Stripe pays out to Tide in batches, less its fees
+async function ensureCardAccount(db: Db, tok: string, conn: Conn) {
+  const list = items(await sage(tok, conn, "bank_accounts?items_per_page=100"));
+  let acc = list.find((x: any) => /stripe/i.test(x.displayed_as || ""));
+  if (!acc) {
+    let lastErr: unknown = null;
+    for (const code of [1250, 1251, 1252, 1253, 1254, 1255, 1256, 1257, 1258, 1259]) {
+      try {
+        acc = await sage(tok, conn, "bank_accounts", { method: "POST", body: JSON.stringify({ bank_account: {
+          bank_account_type_id: "CHECKING", nominal_code: code, balance: 0,
+          bank_account_details: { account_name: "Stripe" } } }) });
+        break;
+      } catch (e) { lastErr = e; }
+    }
+    if (!acc) throw lastErr || new Error("Couldn't make the Stripe bank account in Sage.");
+  }
+  const name = acc.displayed_as || "Stripe";
+  await db.from("accounting_connection").update({ card_account_id: acc.id, card_account_name: name }).eq("id", 1);
+  conn.card_account_id = acc.id; conn.card_account_name = name;
 }
 
 /* =================== Stripe =================== */
@@ -363,7 +385,8 @@ async function publicView(db: Db, token: string) {
   return reply({ ref: invLabel(L.inv.invoice_no), status: L.inv.status, total: L.inv.total, paid: L.inv.paid, due: Math.max(0, due),
     issueDate: L.inv.issue_date, dueDate: L.inv.due_date, overdue: due > 0 && L.inv.due_date < new Date().toISOString().slice(0, 10),
     html: invoiceTable(L), bank: L.inv.status === "void" ? "" : bankBlock(L.s, invLabel(L.inv.invoice_no)), footer: L.s.footer || "",
-    canPayCard: stripeConfigured() && due > 0 && L.inv.status !== "void" });
+    canPayCard: stripeConfigured() && due > 0 && L.inv.status !== "void",
+    klarna: stripeConfigured() && +(L.s.klarna_min || 0) > 0 && due >= +(L.s.klarna_min || 0) });
 }
 async function publicPay(db: Db, token: string) {
   if (!stripeConfigured()) return reply({ error: "Card payments aren't set up yet. Please pay by bank transfer." }, 400);
@@ -372,8 +395,12 @@ async function publicPay(db: Db, token: string) {
   const due = r2(L.inv.total - L.inv.paid);
   if (due <= 0) return reply({ error: "This invoice has already been paid. Thank you!" }, 400);
   const ref = invLabel(L.inv.invoice_no), back = `${PORTAL()}/i?t=${token}`;
+  // card (with Apple Pay / Google Pay) always; Klarna only from the amount set in Admin → Invoicing
+  const kMin = +(L.s.klarna_min || 0);
+  const methods: Record<string, string> = { "payment_method_types[0]": "card" };
+  if (kMin > 0 && due >= kMin) methods["payment_method_types[1]"] = "klarna";
   const s = await stripe("checkout/sessions", {
-    mode: "payment", "line_items[0][quantity]": "1", "line_items[0][price_data][currency]": "gbp",
+    ...methods, mode: "payment", "line_items[0][quantity]": "1", "line_items[0][price_data][currency]": "gbp",
     "line_items[0][price_data][unit_amount]": String(Math.round(due * 100)),
     "line_items[0][price_data][product_data][name]": `Purgō invoice ${ref}`,
     ...(L.inv.email ? { customer_email: L.inv.email } : {}),

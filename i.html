@@ -92,7 +92,9 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:24px}
     return j;
   }
   function banner(cls, t){ const b = $('banner'); b.className = 'banner ' + cls; b.textContent = t; b.hidden = false; }
+  let I_klarna = false;
   function render(I){
+    I_klarna = !!I.klarna;
     $('loading').hidden = true; $('page').hidden = false;
     document.title = `Purgō invoice ${I.ref}`;
     $('inv').innerHTML = I.html;
@@ -105,12 +107,13 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:24px}
     $('dueLbl').textContent = I.paid > 0 ? 'Left to pay' : 'To pay';
     $('dueTxt').textContent = `Invoice ${I.ref} · due by ${day(I.dueDate)}`;
     $('cardRow').hidden = $('cardTxt').hidden = !I.canPayCard || justPaid;
+    if(I.klarna){ $('payBtn').textContent = 'Pay by card or Klarna'; $('cardTxt').textContent = 'Secure payment by Stripe. Apple Pay, Google Pay and Klarna (spread the cost) work too.'; }
     if(I.bank){ $('bank').hidden = false; $('bankBody').innerHTML = I.bank; }
   }
   $('payBtn').onclick = async ()=>{
     const b = $('payBtn'); b.disabled = true; b.textContent = 'Opening secure payment…'; $('payErr').hidden = true;
     try{ const r = await call('pay'); location.href = r.url; }
-    catch(e){ b.disabled = false; b.textContent = 'Pay by card'; $('payErr').hidden = false; $('payErr').textContent = e.message; }
+    catch(e){ b.disabled = false; b.textContent = I_klarna ? 'Pay by card or Klarna' : 'Pay by card'; $('payErr').hidden = false; $('payErr').textContent = e.message; }
   };
   (async ()=>{
     try{ render(await call('view')); if(justPaid) setTimeout(async ()=>{ try{ render(await call('view')); }catch(e){} }, 6000); }

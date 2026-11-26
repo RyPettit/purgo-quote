@@ -24,6 +24,7 @@ create table if not exists public.invoice_settings (
   footer text,                           -- e.g. "Thank you for choosing Purgō"
   updated_at timestamptz not null default now()
 );
+alter table public.invoice_settings add column if not exists klarna_min numeric;   -- offer Klarna on card payments from this amount (blank: never)
 insert into public.invoice_settings (id) values (1) on conflict (id) do nothing;
 
 -- ============ Invoices ============
