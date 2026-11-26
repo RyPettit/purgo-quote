@@ -1,7 +1,7 @@
 /* =====================================================================
    Purgō Accounts (CRM): one record per customer — household, business or
    commercial customer — holding their details, contacts, properties, quotes,
-   invoices (next phase) and every communication.
+   invoices (invoices.js) and every communication.
    Quotes join an account automatically when saved (database trigger), so
    nothing about quoting changes for staff.
    Uses from purgo.js: $, esc, gbp, sb, ME, ROLE, show, flash, noLabel, slug, normPc, fmtPc, isNetErr, confirmInline
@@ -57,9 +57,10 @@ const ACCOUNTS = (()=>{
     if(!a.data) throw new Error('This account no longer exists.');
     const pf = await sb.from('portfolios').select('id,name,status,updated_at,account_id,portfolio_sites(count)').or(`account_id.eq.${id},account_id.is.null`).order('updated_at', {ascending:false});
     if(pf.error) throw pf.error;
-    let jobsData = null;
+    let jobsData = null, invoiceData = null;
     if(typeof JOBS!=='undefined'){ try{ jobsData = await JOBS.loadAccount(id); }catch(e){ jobsData = {jobs:[], visits:[], error:e.message}; } }
-    detail = {acc:a.data, contacts:c.data, quotes:q.data, props:p.data, comms:m.data, jobsData,
+    if(typeof INVOICES!=='undefined'){ try{ invoiceData = await INVOICES.loadAccount(id); }catch(e){ invoiceData = {invoices:[], uninvoiced:[], error:e.message}; } }
+    detail = {acc:a.data, contacts:c.data, quotes:q.data, props:p.data, comms:m.data, jobsData, invoiceData,
       portfolios:pf.data.filter(x=>x.account_id===id), freePortfolios:pf.data.filter(x=>!x.account_id)};
   }
 
@@ -232,7 +233,7 @@ const ACCOUNTS = (()=>{
   function renderDetail(){
     const a = detail.acc;
     const nJobs = detail.jobsData ? detail.jobsData.jobs.filter(j=>j.status!=='ended').length : 0;
-    const tabs = [['overview','Overview'], ...(typeof JOBS!=='undefined' ? [['jobs',`Jobs (${nJobs})`]] : []), ['quotes',`Quotes (${detail.quotes.length})`],['invoices','Invoices'],['comms',`Communication (${detail.comms.length})`]];
+    const tabs = [['overview','Overview'], ...(typeof JOBS!=='undefined' ? [['jobs',`Jobs (${nJobs})`]] : []), ['quotes',`Quotes (${detail.quotes.length})`],['invoices', detail.invoiceData ? `Invoices (${detail.invoiceData.invoices.filter(i=>i.status!=='void').length})` : 'Invoices'],['comms',`Communication (${detail.comms.length})`]];
     const tel = a.phone ? `<a class="btn" href="tel:${esc(digits(a.phone))}" data-log-call>Call</a>` : '';
     const mail = (a.email || detail.contacts.some(c=>c.email) || typeof MAIL!=='undefined') ? `<button class="btn" type="button" id="acEmail">Email</button>` : '';
     root().innerHTML = `
@@ -257,6 +258,7 @@ const ACCOUNTS = (()=>{
     const call = root().querySelector('[data-log-call]'); if(call) call.addEventListener('click', ()=> setTimeout(()=>{ composer = {kind:'call', direction:'out'}; setTab('comms'); }, 300));
     wire();
     if(tab==='jobs' && typeof JOBS!=='undefined') JOBS.wireAccount(detail, reload);
+    if(tab==='invoices' && typeof INVOICES!=='undefined') INVOICES.wireAccount(detail, reload);
   }
 
   /* ---------- Overview: details, contacts, properties ---------- */
@@ -353,8 +355,9 @@ const ACCOUNTS = (()=>{
       }).join('') || '<p class="hint">No quotes for this account yet.</p>'}</div></section>`;
   }
 
-  /* ---------- Invoices (next phase) ---------- */
+  /* ---------- Invoices (invoices.js) ---------- */
   function tabInvoices(){
+    if(typeof INVOICES!=='undefined') return detail.invoiceData && detail.invoiceData.error ? `<section class="card"><p class="note b">Could not load invoices: ${esc(detail.invoiceData.error)}</p></section>` : INVOICES.accountHTML(detail);
     const a = detail.acc;
     return `<section class="card"><h2>Invoices</h2>
       <p class="hint" style="margin-top:8px">Invoicing is the next part of the Portal. Until then invoices and payments stay in Squeegee${a.squeegee_ref ? ` (this customer is <b>${esc(a.squeegee_ref)}</b> there)` : ''}.</p>

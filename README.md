@@ -18,13 +18,17 @@ change prices.
 | File | What it is |
 |---|---|
 | `index.html`, `purgo.css`, `purgo.js` | The app |
-| `accounts.js` | Accounts (CRM): customer details, contacts, properties, quotes, invoices (next) and communication log |
+| `accounts.js` | Accounts (CRM): customer details, contacts, properties, quotes, invoices and communication log |
 | `supabase/accounts.sql` | Accounts tables, auto-linking of quotes to accounts, merge function. Safe to re-run. |
 | `jobs.js` | Jobs: each customer's regular or one-off work, window cleaning rounds, the diary (Jamie / Ryan / Benna) and the Jobs tab on accounts |
 | `supabase/jobs.sql` | Jobs, rounds, visits and work calendars tables; done/skipped moves the next due date on. Safe to re-run. |
 | `supabase/discounts.sql` | Discounts on jobs: price before discount, % or £ off and a reason; `price` stays what's charged. Safe to re-run. |
 | `supabase/rounds.sql` | Window round dates: each round's next date repeats every N weeks; one Google Calendar event per round date. Safe to re-run. |
 | `supabase/functions/_shared/calendar.ts` | Copies bookings to Google Calendar (a calendar each for Jamie, Ryan and Benna), run by the mail function |
+| `invoices.js` | Invoices: the Invoices tab on accounts, the Invoices page, recording payments, Admin → Invoicing (terms, bank details, VAT, auto-invoicing, Sage, Stripe) |
+| `i.html` | The customer's online invoice: view, pay by card (Stripe) or see bank details (no login; link sent in the invoice email) |
+| `supabase/invoices.sql` | Invoices, lines, payments, invoice settings, the Sage connection (server only) and the 10-minute Sage copy. Safe to re-run. |
+| `supabase/functions/invoicing` | Emails invoices, Stripe card payments (Checkout + webhook), copies invoices and payments to Sage Accounting and reads back payments matched there |
 | `mail.js` | Emailing quotes and messages, the notification bell, Admin → Email (Gmail connection) |
 | `q.html` | The customer's online quote: view, accept, decline or ask a question (no login; link sent in the quote email) |
 | `supabase/email.sql` | Online quote links, notifications, mailbox connection and the 2-minute mail check. Safe to re-run. |
@@ -76,3 +80,24 @@ Changes are made in this repository and Cloudflare redeploys within a minute or
 two. Before each commit run `python3 tools/stamp.py`: it stamps file hashes into
 `index.html` and `sw.js` so every device loads matching files. Edit
 `tools/sw.template.js`, not `sw.js`.
+
+## Invoicing, Sage and Stripe
+
+Invoices live in the Portal. Every sent invoice and every payment is copied to
+**Sage Accounting** every 10 minutes (and straight away when emailed), so the
+accountant works from Sage as normal. Bank transfers arrive in Sage from the Tide
+bank feed; once one is matched to the invoice in Sage, the Portal marks it paid.
+Card payments go through **Stripe Checkout** from the customer's invoice link and
+are marked paid straight away.
+
+Setup (do it on dev first, then live):
+1. **Sage:** at developer.sage.com make an app. Callback URL = the `invoicing`
+   function's URL (shown in Admin → Invoicing). Add `SAGE_CLIENT_ID` and
+   `SAGE_CLIENT_SECRET` to Supabase → Edge Functions → Secrets. In the Portal:
+   Admin → Invoicing → Connect Sage, then check the accounts it picked.
+2. **Stripe:** add `STRIPE_SECRET_KEY` (test key `sk_test_…` on dev). Add a
+   webhook endpoint = the `invoicing` function's URL, event
+   `checkout.session.completed`, and put its signing secret in
+   `STRIPE_WEBHOOK_SECRET`.
+3. The `invoicing` function needs **Verify JWT off** (Sage's redirect, Stripe's
+   webhook and customers' invoice links have no Portal login; it checks callers itself).

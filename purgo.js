@@ -1069,7 +1069,7 @@ const round2 = n => Math.round((+n||0)*100)/100;
   document.addEventListener('visibilitychange', start);
   start();
 })();
-const VIEWS = ['login','accounts','jobs','quote','quotes','portfolio','portal','admin','measure'];
+const VIEWS = ['login','accounts','jobs','invoices','quote','quotes','portfolio','portal','admin','measure'];
 // the account the open quote belongs to (set when starting a quote from an account, or by the database on save)
 let quoteAccount = null;
 function setQuoteAccount(id, name, no){
@@ -1110,7 +1110,9 @@ function show(view){
   if(view==='portal' && typeof PORTAL!=='undefined') PORTAL.onShow();
   if(view==='accounts' && typeof ACCOUNTS!=='undefined') ACCOUNTS.onShow();
   if(view==='jobs' && typeof JOBS!=='undefined') JOBS.onShow();
+  if(view==='invoices' && typeof INVOICES!=='undefined') INVOICES.onShow();
   if(view==='admin' && typeof MAIL!=='undefined') MAIL.renderAdmin();
+  if(view==='admin' && typeof INVOICES!=='undefined') INVOICES.renderAdmin();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{

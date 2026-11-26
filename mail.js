@@ -169,7 +169,7 @@ const MAIL = (()=>{
   }
 
   /* ---------- notification bell ---------- */
-  const ICON = {quote_accepted:'✓', quote_declined:'✕', quote_question:'?', email_in:'✉'};
+  const ICON = {quote_accepted:'✓', quote_declined:'✕', quote_question:'?', email_in:'✉', invoice_paid:'£'};
   function bellUI(){
     if($('bell')) return;
     const u = $('tbUser'); if(!u) return;
