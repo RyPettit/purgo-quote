@@ -1069,7 +1069,7 @@ const round2 = n => Math.round((+n||0)*100)/100;
   document.addEventListener('visibilitychange', start);
   start();
 })();
-const VIEWS = ['login','home','accounts','jobs','invoices','quote','quotes','portfolio','portal','admin','measure'];
+const VIEWS = ['login','home','today','accounts','jobs','invoices','quote','quotes','portfolio','portal','admin','measure'];
 // the account the open quote belongs to (set when starting a quote from an account, or by the database on save)
 let quoteAccount = null;
 function setQuoteAccount(id, name, no){
@@ -1138,6 +1138,7 @@ function show(view, sub){
   if(view==='invoices' && typeof INVOICES!=='undefined') INVOICES.onShow();
   if(view==='admin') adminOpen(sub);
   if(view==='home' && typeof HOME!=='undefined') HOME.onShow();
+  if(view==='today' && typeof TODAY!=='undefined') TODAY.onShow();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
@@ -1203,6 +1204,7 @@ $('signOut').onclick = async ()=>{
   if(typeof PORTAL!=='undefined') PORTAL.reset();
   if(typeof ACCOUNTS!=='undefined') ACCOUNTS.reset();
   if(typeof HOME!=='undefined') HOME.reset();
+  if(typeof TODAY!=='undefined') TODAY.reset();
   if(typeof JOBS!=='undefined') JOBS.reset();
   if(typeof MAIL!=='undefined') MAIL.stop();
   $('newJob').click(); $('on-gt').checked = false; $('on-wn').checked = false; $('on-rf').checked = false; $('on-pw').checked = true; syncSvc();
