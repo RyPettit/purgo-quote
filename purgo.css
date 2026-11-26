@@ -660,3 +660,5 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .adm-menu .at small{color:var(--muted);font-size:13px}
 .adm-menu .ch{color:var(--muted);font-size:22px;line-height:1}
 #admBack{margin-bottom:4px}
+/* the section title is already at the top, so a card's own heading would repeat it */
+#bizCard>h2:first-child,#mailCard>h2:first-child,#invCard>h2:first-child,#remCard>h2:first-child,.adm-sec[data-sec="staff"]>.card>h2:first-child{display:none}
