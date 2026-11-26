@@ -1,5 +1,5 @@
 /* =====================================================================
-   Admin → Reminders: the business details used in customer messages, and the
+   Admin → Your business: the business details used in customer messages. Admin → Reminders: the
    editable automatic messages (appointment reminder the day before, payment reminders).
    Templates live in public.message_templates with {placeholders}, so nothing about the
    business is fixed in code (the Portal can be set up for any trade business).
@@ -59,6 +59,38 @@ const REMINDERS = (()=>{
     </div>`;
   }
 
+  /* ---------- Admin → Your business ---------- */
+  async function renderBusiness(){
+    const c = $('bizCard'); if(!c) return;
+    if(ROLE!=='admin'){ c.hidden = true; return; }
+    c.innerHTML = `<h2>Your business</h2><p class="hint">Loading…</p>`;
+    const b = await sb.from('business_profile').select('*').eq('id', 1).maybeSingle();
+    if(b.error){ c.innerHTML = `<h2>Your business</h2><p class="note b">${esc(b.error.message)}</p>`; return; }
+    biz = b.data || {trading_name:''};
+    c.innerHTML = `<h2>Your business</h2>
+      <p class="hint">Used in customer messages (reminders, emails and texts), so they always show your current details.</p>
+      <div class="fields" id="rmBiz">
+        <label class="f">Trading name<input data-bf="trading_name" value="${esc(biz.trading_name||'')}"></label>
+        <label class="f">Company name<input data-bf="legal_name" value="${esc(biz.legal_name||'')}" placeholder="e.g. Purgō Clean Ltd"></label>
+        <label class="f">Phone<input data-bf="phone" inputmode="tel" value="${esc(biz.phone||'')}"></label>
+        <label class="f">Email<input data-bf="email" type="email" value="${esc(biz.email||'')}"></label>
+        <label class="f">Website<input data-bf="website" value="${esc(biz.website||'')}"></label>
+        <label class="f">Texts come from <small>(up to 11 letters)</small><input data-bf="sms_sender" maxlength="11" value="${esc(biz.sms_sender||'')}" placeholder="e.g. Purgo"></label>
+        <label class="f wide">Sign-off<textarea data-bf="sign_off" rows="2" placeholder="Kind regards,&#10;The team">${esc(biz.sign_off||'')}</textarea></label>
+      </div>
+      <div class="vb-actions" style="justify-content:flex-start"><button class="btn pri" type="button" id="rmBizSave">Save business details</button></div>
+`;
+    $('rmBizSave').onclick = async ()=>{
+      const upd = {updated_at:new Date().toISOString()};
+      c.querySelectorAll('[data-bf]').forEach(el=>{ upd[el.dataset.bf] = el.value.trim() || null; });
+      if(upd.sms_sender) upd.sms_sender = plain(upd.sms_sender).replace(/[^A-Za-z0-9 ]/g,'').slice(0, 11) || null;
+      if(!upd.trading_name){ flash('Add a trading name'); return; }
+      const {error} = await sb.from('business_profile').update(upd).eq('id', 1);
+      if(error){ flash('Not saved: ' + error.message); return; }
+      biz = {...biz, ...upd}; flash('Business details saved');
+    };
+  }
+
   async function renderAdmin(){
     const c = $('remCard'); if(!c) return;
     if(ROLE!=='admin'){ c.hidden = true; return; }
@@ -72,32 +104,11 @@ const REMINDERS = (()=>{
     biz = b.data || {trading_name:''}; inv = s.data || {};
     tpls = (t.data || []).sort((x,y)=> (ORDER.indexOf(x.key)+1 || 99) - (ORDER.indexOf(y.key)+1 || 99));
     c.innerHTML = `<h2>Reminders</h2>
-      <p class="hint">Messages the Portal sends to customers on its own, from the connected mailbox. Edit the wording here: words in {braces} are filled in for each customer.</p>
-      <h3 style="margin-top:14px">Your business</h3>
-      <p class="hint">Used in every customer message.</p>
-      <div class="fields" id="rmBiz">
-        <label class="f">Trading name<input data-bf="trading_name" value="${esc(biz.trading_name||'')}"></label>
-        <label class="f">Company name<input data-bf="legal_name" value="${esc(biz.legal_name||'')}" placeholder="e.g. Purgō Clean Ltd"></label>
-        <label class="f">Phone<input data-bf="phone" inputmode="tel" value="${esc(biz.phone||'')}"></label>
-        <label class="f">Email<input data-bf="email" type="email" value="${esc(biz.email||'')}"></label>
-        <label class="f">Website<input data-bf="website" value="${esc(biz.website||'')}"></label>
-        <label class="f">Texts come from <small>(up to 11 letters)</small><input data-bf="sms_sender" maxlength="11" value="${esc(biz.sms_sender||'')}" placeholder="e.g. Purgo"></label>
-        <label class="f wide">Sign-off<textarea data-bf="sign_off" rows="2" placeholder="Kind regards,&#10;The team">${esc(biz.sign_off||'')}</textarea></label>
-      </div>
-      <div class="vb-actions" style="justify-content:flex-start"><button class="btn pri" type="button" id="rmBizSave">Save business details</button></div>
+      <p class="hint">Messages the Portal sends to customers on its own, from the connected mailbox. Edit the wording here: words in {braces} are filled in for each customer, and your name, phone and sign-off come from Your business.</p>
       <h3 style="margin-top:18px">Text messages</h3>
       ${sms.configured ? `<p class="hint">On, through ${sms.provider==='twilio' ? 'Twilio' : 'The SMS Works'}. Customers get texts if their account's "Reminders by" is set to Text message or Email and text, and they have a UK mobile number on the account.</p>`
         : `<p class="hint">Not set up yet. Texts need an account with an SMS provider (The SMS Works is UK-based and costs a few pence a text). Once its API key is added to the Portal, the text reminders below start sending to customers set to get texts.</p>`}
       ${tpls.map(tplHTML).join('')}`;
-    $('rmBizSave').onclick = async ()=>{
-      const upd = {updated_at:new Date().toISOString()};
-      c.querySelectorAll('[data-bf]').forEach(el=>{ upd[el.dataset.bf] = el.value.trim() || null; });
-      if(upd.sms_sender) upd.sms_sender = plain(upd.sms_sender).replace(/[^A-Za-z0-9 ]/g,'').slice(0, 11) || null;
-      if(!upd.trading_name){ flash('Add a trading name'); return; }
-      const {error} = await sb.from('business_profile').update(upd).eq('id', 1);
-      if(error){ flash('Not saved: ' + error.message); return; }
-      biz = {...biz, ...upd}; flash('Business details saved'); c.querySelectorAll('.rm-tpl').forEach(preview);
-    };
     c.querySelectorAll('.rm-tpl').forEach(box=>{
       const k = box.dataset.tk, q = s=>box.querySelector(s);
       let last = q('[data-tf="body"]');
@@ -137,5 +148,5 @@ const REMINDERS = (()=>{
     const cnt = box.querySelector('[data-count]');
     if(cnt){ const n = [...plain(body)].length, p = parts(body); cnt.textContent = `About ${n} characters with example details: ${p} text${p>1?'s':''} per customer${p>1?' (each text is charged)':''}. Real names and addresses can make it longer.`; }
   }
-  return {renderAdmin};
+  return {renderAdmin, renderBusiness};
 })();

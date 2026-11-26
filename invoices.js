@@ -404,8 +404,8 @@ const INVOICES = (()=>{
 
   // back from Sage's sign-in
   const back = new URLSearchParams(location.search).get('sage');
-  if(back){ const msg = {connected:'Sage connected. Check the accounts it picked in Admin → Invoicing.', cancelled:'Connecting Sage was cancelled.', expired:'That took too long. Press Connect Sage again.', failed:'Sage didn\'t return access. Press Connect Sage again.'}[back];
-    if(msg) setTimeout(()=>flash(msg), 700); history.replaceState(null, '', location.pathname + location.hash); }
+  if(back){ const msg = {connected:'Sage connected. Check the accounts it picked below.', cancelled:'Connecting Sage was cancelled.', expired:'That took too long. Press Connect Sage again.', failed:'Sage didn\'t return access. Press Connect Sage again.'}[back];
+    if(msg) setTimeout(()=>flash(msg), 700); history.replaceState(null, '', location.pathname + (/^#admin/.test(location.hash) ? '#admin/invoicing' : location.hash)); }
 
   return {fn, loadAccount, accountHTML, wireAccount, openInvoice, onShow, renderAdmin, invNo};
 })();

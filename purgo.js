@@ -1093,7 +1093,30 @@ function syncEditing(){
   const b = $('saveCopy'); if(b) b.hidden = !editing;
   const s = $('saveQ'); if(s) s.textContent = editing ? 'Update quote' : 'Save quote';
 }
-function show(view){
+/* ---------- Admin: a settings menu, each section opened on its own (#admin/<section>) ---------- */
+const ADMIN_SECS = {business:'Your business', pricing:'Prices and costs', email:'Email', invoicing:'Invoicing and payments', reminders:'Reminders', staff:'Staff'};
+let adminSec = '';
+function adminOpen(sec){
+  sec = ADMIN_SECS[sec] ? sec : '';
+  adminSec = sec;
+  $('admHome').hidden = !!sec;
+  document.querySelectorAll('#view-admin .adm-sec').forEach(d=> d.hidden = d.dataset.sec !== sec);
+  $('admBack').hidden = !sec;
+  $('admTitle').textContent = sec ? ADMIN_SECS[sec] : 'Admin';
+  $('admSub').hidden = !!sec;
+  $('admRateBar').hidden = !(sec==='pricing' || sec==='staff');
+  $('saveRates').hidden = sec !== 'pricing';
+  if(sec==='pricing' && ratesDirty===false) renderRates();
+  if(sec==='staff') loadStaff();
+  if(sec==='email' && typeof MAIL!=='undefined') MAIL.renderAdmin();
+  if(sec==='invoicing' && typeof INVOICES!=='undefined') INVOICES.renderAdmin();
+  if(sec==='reminders' && typeof REMINDERS!=='undefined') REMINDERS.renderAdmin();
+  if(sec==='business' && typeof REMINDERS!=='undefined') REMINDERS.renderBusiness();
+}
+document.querySelectorAll('#admHome [data-sec]').forEach(b=> b.onclick = ()=>{ location.hash = '#admin/' + b.dataset.sec; });
+$('admBack').onclick = ()=>{ location.hash = '#admin'; };
+
+function show(view, sub){
   if(ROLE==='customer' && view!=='login') view = 'portal';           // customers only ever see their portal
   if(view==='portal' && ROLE!=='customer' && !(typeof PORTAL!=='undefined' && PORTAL.isPreview())) view = 'portfolio';
   if(view==='admin' && ROLE!=='admin') view = 'quote';
@@ -1103,17 +1126,15 @@ function show(view){
   document.querySelectorAll('.nav button[data-view]').forEach(b=>b.classList.toggle('on', b.dataset.view===view));
   $('nav').hidden = !ME || ROLE==='customer'; $('tbUser').hidden = !ME;
   $('net').hidden = ROLE==='customer';
-  if(view!=='login' && location.hash!=='#'+view) history.replaceState(null,'','#'+view);
+  const want = '#' + view + (view==='admin' && ADMIN_SECS[sub] ? '/' + sub : '');
+  if(view!=='login' && location.hash!==want) history.replaceState(null,'',want);
   if(view==='quotes') loadQuotes();
-  if(view==='admin') loadStaff();
   if(view==='portfolio' && typeof PORTFOLIO!=='undefined') PORTFOLIO.onShow();
   if(view==='portal' && typeof PORTAL!=='undefined') PORTAL.onShow();
   if(view==='accounts' && typeof ACCOUNTS!=='undefined') ACCOUNTS.onShow();
   if(view==='jobs' && typeof JOBS!=='undefined') JOBS.onShow();
   if(view==='invoices' && typeof INVOICES!=='undefined') INVOICES.onShow();
-  if(view==='admin' && typeof MAIL!=='undefined') MAIL.renderAdmin();
-  if(view==='admin' && typeof INVOICES!=='undefined') INVOICES.renderAdmin();
-  if(view==='admin' && typeof REMINDERS!=='undefined') REMINDERS.renderAdmin();
+  if(view==='admin') adminOpen(sub);
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{
@@ -1121,7 +1142,7 @@ document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>
   if(b.dataset.view==='measure' && typeof MEASURE!=='undefined'){ MEASURE.open(null); return; }
   show(b.dataset.view);
 });
-window.addEventListener('hashchange', ()=>{ const v = location.hash.slice(1); if(!VIEWS.includes(v) || v==='login') return; if(v==='measure' && typeof MEASURE!=='undefined' && document.getElementById('view-measure').hidden){ MEASURE.open(null); return; } show(v); });
+window.addEventListener('hashchange', ()=>{ const [v, sub] = location.hash.slice(1).split('/'); if(!VIEWS.includes(v) || v==='login') return; if(v==='measure' && typeof MEASURE!=='undefined' && document.getElementById('view-measure').hidden){ MEASURE.open(null); return; } show(v, sub); });
 
 /* ---------- network status & offline outbox ---------- */
 function outbox(){ return LS.get('purgoOutbox:'+(ME&&ME.id), []); }
@@ -1213,8 +1234,8 @@ async function enter(user){
   updateNet(); flushOutbox();
   makeRef();
   setTimeout(()=>checkFollowUps(true), 1500);
-  const v = location.hash.slice(1);
-  show(VIEWS.includes(v) && v!=='login' ? v : 'quote');
+  const [v, sub] = location.hash.slice(1).split('/');
+  show(VIEWS.includes(v) && v!=='login' ? v : 'quote', sub);
   render();
   if(typeof MAIL!=='undefined') MAIL.start();
 }
