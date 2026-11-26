@@ -28,7 +28,7 @@ const ACCOUNTS = (()=>{
   async function loadList(){
     loading = true;
     const {data, error} = await sb.from('accounts')
-      .select('id,account_no,name,kind,status,email,phone,billing_line,billing_postcode,tags,updated_at,created_at,portfolios(id),quotes(id,status,total,created_at,updated_at),addresses(id),account_comms(occurred_at)')
+      .select('id,account_no,name,kind,status,email,phone,billing_line,billing_postcode,tags,updated_at,created_at,portfolios(id),quotes(id,status,total,accepted_sections,accepted_total,created_at,updated_at),addresses(id),account_comms(occurred_at)')
       .order('name').limit(5000);
     loading = false;
     if(error) throw error;
@@ -38,7 +38,7 @@ const ACCOUNTS = (()=>{
       const lastC = (a.account_comms||[]).reduce((m,c)=>Math.max(m, +new Date(c.occurred_at)||0), 0);
       return Object.assign(a, {
         nQuotes: qs.length, nProps: (a.addresses||[]).length, nPf: (a.portfolios||[]).length,
-        won: qs.filter(q=>q.status==='accepted').reduce((s,q)=>s+(+q.total||0),0),
+        won: qs.reduce((s,q)=>s+wonTotal(q),0),
         open: qs.filter(q=>q.status==='sent'||q.status==='draft').reduce((s,q)=>s+(+q.total||0),0),
         lastAt: Math.max(lastQ, lastC, +new Date(a.created_at)||0)
       });
@@ -49,7 +49,7 @@ const ACCOUNTS = (()=>{
     const [a, c, q, p, m] = await Promise.all([
       sb.from('accounts').select('*').eq('id', id).maybeSingle(),
       sb.from('account_contacts').select('*').eq('account_id', id).order('is_primary', {ascending:false}).order('name'),
-      sb.from('quotes').select('id,ref,quote_no,status,customer,address,postcode,total,lines,state,created_at,updated_at,sent_at,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '')).eq('account_id', id).order('created_at', {ascending:false}),
+      sb.from('quotes').select('id,ref,quote_no,status,customer,address,postcode,total,sub,vat,job_type,options,accepted_sections,accepted_total,accepted_at,accepted_name,lines,state,created_at,updated_at,sent_at,created_by_name' + (ROLE==='admin' ? ',quote_costs(profit,margin)' : '')).eq('account_id', id).order('created_at', {ascending:false}),
       sb.from('addresses').select('id,key,line,postcode,notes,last_quoted').eq('account_id', id).order('last_quoted', {ascending:false, nullsFirst:false}),
       sb.from('account_comms').select('*').eq('account_id', id).order('occurred_at', {ascending:false}).limit(500)
     ]);
@@ -224,7 +224,7 @@ const ACCOUNTS = (()=>{
     const lastC = detail.comms[0];
     return `<div class="ac-stats">
       <div class="stat"><span>Quotes</span><b>${qs.length}</b></div>
-      <div class="stat"><span>Won</span><b>${gbp(won.reduce((s,q)=>s+(+q.total||0),0))}</b></div>
+      <div class="stat"><span>Won</span><b>${gbp(won.reduce((s,q)=>s+wonTotal(q),0))}</b></div>
       <div class="stat"><span>Awaiting reply</span><b>${gbp(open.reduce((s,q)=>s+(+q.total||0),0))}</b></div>
       <div class="stat"><span>Last contact</span><b>${lastC ? fmtD(lastC.occurred_at) : '—'}</b></div>
     </div>`;
@@ -345,10 +345,11 @@ const ACCOUNTS = (()=>{
     return `<section class="card"><div class="svc-head"><h2>Quotes</h2><button class="btn sm pri" type="button" data-pquote="">New quote</button></div>
       <div class="qlist" style="margin-top:8px">${detail.quotes.map(q=>{
         const qc = Array.isArray(q.quote_costs) ? q.quote_costs[0] : q.quote_costs;
-        return `<div class="qitem"><div class="m"><b>${q.quote_no ? noLabel(q.quote_no) : esc(q.ref)}</b><small>${esc(q.address||'')}${q.postcode?' · '+esc(q.postcode):''}</small><small>${fmtD(q.created_at)} · ${esc(q.created_by_name||'')}${q.sent_at?' · sent '+fmtD(q.sent_at):''}</small></div>
-          <span class="pill ${q.status}">${QST[q.status]||q.status}</span>
+        const part = q.status==='accepted' && acceptedNames(q), multi = optionsOf(q).sections.length>1;
+        return `<div class="qitem"><div class="m"><b>${q.quote_no ? noLabel(q.quote_no) : esc(q.ref)}</b><small>${esc(q.address||'')}${q.postcode?' · '+esc(q.postcode):''}</small><small>${fmtD(q.created_at)} · ${esc(q.created_by_name||'')}${q.sent_at?' · sent '+fmtD(q.sent_at):''}</small>${part ? `<small class="fu-next ok">Accepted only: ${esc(part.join(', '))} · ${gbp(q.accepted_total)}</small>` : ''}</div>
+          <span class="pill ${q.status}">${part?'Part accepted':QST[q.status]||q.status}</span>
           <div class="v">${gbp(q.total||0)}${admin && qc ? `<small style="display:block;color:var(--muted);font-size:.72rem">${gbp(qc.profit)} · ${qc.margin}%</small>` : ''}</div>
-          <div class="qacts">${q.status==='accepted' && typeof JOBS!=='undefined' ? `<button class="btn sm pri" type="button" data-mkjob="${q.id}">Make job</button>` : ''}<button class="btn sm" type="button" data-openq="${q.id}">Open</button></div></div>`;
+          <div class="qacts">${(q.status==='sent'||q.status==='accepted') && multi ? `<button class="btn sm" type="button" data-acwork="${q.id}">${q.status==='accepted'?'Accepted work':'Part accept'}</button>` : ''}${q.status==='accepted' && typeof JOBS!=='undefined' ? `<button class="btn sm pri" type="button" data-mkjob="${q.id}">Make job</button>` : ''}<button class="btn sm" type="button" data-openq="${q.id}">Open</button></div></div>`;
       }).join('') || '<p class="hint">No quotes for this account yet.</p>'}</div></section>`;
   }
 
@@ -404,7 +405,26 @@ const ACCOUNTS = (()=>{
   /* ---------- wiring ---------- */
   function wire(){
     const a = detail.acc;
-    root().querySelectorAll('[data-mkjob]').forEach(b=> b.onclick = ()=>{ const q = detail.quotes.find(x=>x.id===b.dataset.mkjob); if(q && typeof JOBS!=='undefined'){ JOBS.startFromQuote(q); setTab('jobs'); } });
+    root().querySelectorAll('[data-acwork]').forEach(b=> b.onclick = async ()=>{ const q = detail.quotes.find(x=>x.id===b.dataset.acwork); if(q && await setAcceptedWork(q)) renderDetail(); });
+    root().querySelectorAll('[data-mkjob]').forEach(b=> b.onclick = async ()=>{
+      const q = detail.quotes.find(x=>x.id===b.dataset.mkjob); if(!q || typeof JOBS==='undefined') return;
+      const opt = optionsOf(q);
+      let names = null;
+      if(opt.sections.length>1){
+        // sections already made into jobs from this quote can't be picked again; travel etc. goes on the first job only
+        let jobs = (detail.jobsData||{}).jobs;
+        if(!jobs){ try{ jobs = (await JOBS.loadAccount(cur)).jobs; }catch(e){ jobs = []; } }
+        const fromQ = jobs.filter(j=>j.quote_id===q.id);
+        const done = fromQ.flatMap(j=> Array.isArray(j.quote_sections) ? j.quote_sections : opt.sections.map(s=>s.name));
+        const want = (acceptedNames(q) || opt.sections.map(s=>s.name)).filter(n=>!done.includes(n));
+        if(done.length && !want.length && done.length>=opt.sections.length){ flash('Every section of this quote is already a job.'); return; }
+        names = await pickSections(q, {title:'Make a job from', intro:'Tick the work for this job. Make another job for the rest, e.g. windows on a round and gutters as a one-off.',
+          preset:want, done, ok:'Make job', withFixed:!fromQ.length, fixedNote: fromQ.length ? 'is already on the first job from this quote, so it is left off.' : 'goes on this job.'});
+        if(!names) return;
+        JOBS.startFromQuote(q, names, !fromQ.length);
+      } else JOBS.startFromQuote(q);
+      setTab('jobs');
+    });
     // details form
     const form = $('acForm');
     if(form){
