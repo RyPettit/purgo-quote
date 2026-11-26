@@ -1113,6 +1113,7 @@ function show(view){
   if(view==='invoices' && typeof INVOICES!=='undefined') INVOICES.onShow();
   if(view==='admin' && typeof MAIL!=='undefined') MAIL.renderAdmin();
   if(view==='admin' && typeof INVOICES!=='undefined') INVOICES.renderAdmin();
+  if(view==='admin' && typeof REMINDERS!=='undefined') REMINDERS.renderAdmin();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('.nav button[data-view]').forEach(b=> b.onclick = ()=>{

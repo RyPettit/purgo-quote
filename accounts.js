@@ -278,6 +278,7 @@ const ACCOUNTS = (()=>{
           <label class="f">How they found us<input data-af="source" value="${esc(a.source||'')}"></label>
           <label class="f">Squeegee ref<input data-af="squeegee_ref" value="${esc(a.squeegee_ref||'')}" placeholder="while we use both"></label>
           <label class="f wide">Tags<input data-af="tags" value="${esc((a.tags||[]).join(', '))}" placeholder="e.g. window round, monthly, VIP"></label>
+          <label class="ck wide"><input type="checkbox" data-af="no_reminders" ${a.no_reminders?'checked':''}> No automatic reminders (appointments or payments)</label>
           <label class="f wide">Notes<textarea data-af="notes" rows="3" placeholder="Gate code, parking, preferences…">${esc(a.notes||'')}</textarea></label>
         </div>
         <div class="vb-actions" style="margin-top:12px"><span class="hint" id="acSaved"></span><button class="btn pri" type="button" id="acSave" disabled>Save changes</button></div>
@@ -432,11 +433,12 @@ const ACCOUNTS = (()=>{
     const form = $('acForm');
     if(form){
       const mark = ()=>{ $('acSave').disabled = false; $('acSaved').textContent = 'Unsaved changes'; };
-      form.querySelectorAll('[data-af]').forEach(el=> el.addEventListener('input', mark));
+      form.querySelectorAll('[data-af]').forEach(el=> el.addEventListener(el.type==='checkbox' ? 'change' : 'input', mark));
       $('acSave').onclick = async ()=>{
         const upd = {};
         form.querySelectorAll('[data-af]').forEach(el=>{ const k = el.dataset.af; let v = el.value.trim();
-          if(k==='tags') v = v.split(',').map(x=>x.trim()).filter(Boolean);
+          if(el.type==='checkbox') v = el.checked;
+          else if(k==='tags') v = v.split(',').map(x=>x.trim()).filter(Boolean);
           else if(k==='email') v = v.toLowerCase() || null;
           else if(k==='billing_postcode') v = fmtPc(v) || null;
           else if(k!=='name' && k!=='kind' && k!=='status') v = v || null;

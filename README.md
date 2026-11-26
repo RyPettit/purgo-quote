@@ -28,6 +28,10 @@ change prices.
 | `invoices.js` | Invoices: the Invoices tab on accounts, the Invoices page, recording payments, Admin → Invoicing (terms, bank details, VAT, auto-invoicing, Sage, Stripe) |
 | `i.html` | The customer's online invoice: view, pay by card (Stripe) or see bank details (no login; link sent in the invoice email) |
 | `supabase/invoices.sql` | Invoices, lines, payments, invoice settings, the Sage connection (server only) and the 10-minute Sage copy. Safe to re-run. |
+| `reminders.js` | Admin → Reminders: business details used in customer messages, and the editable automatic messages (appointment reminder the day before, payment reminders) |
+| `supabase/messages.sql` | Business details, message templates, appointment reminders (sent by the reminders function every 10 minutes). Run after reminders.sql. |
+| `supabase/functions/reminders` | Sends tomorrow's appointment reminders after the set time, and test messages from Admin → Reminders |
+| `docs/white-label.md` | How to build so the Portal can be set up for any trade business, and what's still hard-coded |
 | `supabase/reminders.sql` | Payment reminders: days after the work to chase unpaid invoices (default 3 and 7), and per-invoice reminder status. Run after invoices.sql. |
 | `supabase/functions/invoicing` | Emails invoices and payment reminders, Stripe card payments (Checkout + webhook), copies invoices and payments to Sage Accounting and reads back payments matched there |
 | `mail.js` | Emailing quotes and messages, the notification bell, Admin → Email (Gmail connection) |
