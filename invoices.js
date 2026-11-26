@@ -332,6 +332,8 @@ const INVOICES = (()=>{
         <label class="f">Account name<input id="isBName" value="${esc(s.bank_account_name||'')}" placeholder="Purgō Clean Ltd"></label>
         <label class="f">Sort code<input id="isSort" inputmode="numeric" value="${esc(s.bank_sort_code||'')}" placeholder="00-00-00"></label>
         <label class="f">Account number<input id="isAcc" inputmode="numeric" value="${esc(s.bank_account_no||'')}"></label>
+        <label class="f">Offer Klarna from (£) <small>(blank: never)</small><input id="isKlarna" type="number" min="0" step="1" value="${s.klarna_min ?? ''}" placeholder="e.g. 300"></label>
+        <p class="hint">Klarna lets customers spread the cost. It costs Purgō more than a card payment, so it's only offered on invoices of this amount or more.</p>
         <label class="f wide">Footer on invoices <small>(optional)</small><input id="isFoot" value="${esc(s.footer||'')}" placeholder="Thank you for choosing Purgō, a family run business."></label>
       </div>
       <div class="vb-actions" style="justify-content:flex-start;margin-top:8px"><button class="btn pri" type="button" id="isSave">Save invoicing settings</button></div>
@@ -354,7 +356,7 @@ const INVOICES = (()=>{
     $('isVat').onchange = ()=>{ $('isVatR').disabled = !$('isVat').checked; };
     $('isSave').onclick = async ()=>{
       const upd = {terms_days:Math.max(0, Math.min(120, parseInt(v('isTerms'))||0)), auto_invoice:$('isAuto').value, vat_registered:$('isVat').checked, vat_rate:+v('isVatR')||20,
-        bank_account_name:v('isBName')||null, bank_sort_code:v('isSort')||null, bank_account_no:v('isAcc')||null, footer:v('isFoot')||null, updated_at:new Date().toISOString()};
+        bank_account_name:v('isBName')||null, bank_sort_code:v('isSort')||null, bank_account_no:v('isAcc')||null, footer:v('isFoot')||null, klarna_min:(+v('isKlarna')>0 ? +v('isKlarna') : null), updated_at:new Date().toISOString()};
       $('isSave').disabled = true;
       const {error} = await sb.from('invoice_settings').update(upd).eq('id', 1);
       if(error){ $('isSave').disabled = false; flash('Not saved: ' + error.message); return; }
