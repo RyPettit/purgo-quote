@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=92b4145f25">
+<link rel="stylesheet" href="purgo.css?v=c072e4614b">
 </head>
 <body>
 <header class="topbar">
@@ -400,6 +400,7 @@
     <button type="button" data-sec="email"><span class="at"><b>Email</b><small>The mailbox the Portal sends and reads customer email from</small></span><span class="ch">›</span></button>
     <button type="button" data-sec="invoicing"><span class="at"><b>Invoicing and payments</b><small>Payment terms, bank details, VAT, card payments and Sage</small></span><span class="ch">›</span></button>
     <button type="button" data-sec="reminders"><span class="at"><b>Reminders</b><small>Automatic appointment and payment reminders, by email and text</small></span><span class="ch">›</span></button>
+    <button type="button" data-sec="growth"><span class="at"><b>Reviews & repeat work</b><small>Review requests, "due again" prompts and win-backs</small></span><span class="ch">›</span></button>
     <button type="button" data-sec="staff"><span class="at"><b>Staff</b><small>Who can log in, and switching people off</small></span><span class="ch">›</span></button>
   </nav>
   <div class="admin-grid adm-sec" data-sec="business" hidden><section class="card" id="bizCard"></section></div>
@@ -432,6 +433,7 @@
   <div class="admin-grid adm-sec" data-sec="email" hidden><section class="card" id="mailCard"></section></div>
   <div class="admin-grid adm-sec" data-sec="invoicing" hidden><section class="card" id="invCard"></section></div>
   <div class="admin-grid adm-sec" data-sec="reminders" hidden><section class="card" id="remCard"></section></div>
+  <div class="admin-grid adm-sec" data-sec="growth" hidden><section class="card" id="growCard"></section></div>
   <div class="admin-grid adm-sec" data-sec="staff" hidden>
   <section class="card">
     <h2>Staff</h2>
@@ -444,16 +446,17 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=62c6d20d7c"></script>
+<script src="purgo.js?v=024b18fae8"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=704c4911e9"></script>
-<script src="mail.js?v=d92cda6caf"></script>
+<script src="mail.js?v=f20b2f8ea4"></script>
 <script src="accounts.js?v=e22525f38e"></script>
 <script src="jobs.js?v=4240977ba5"></script>
 <script src="invoices.js?v=d29fb10d35"></script>
-<script src="reminders.js?v=9c63bead13"></script>
-<script src="home.js?v=28795eee1f"></script>
+<script src="reminders.js?v=3caef0b2aa"></script>
+<script src="home.js?v=8caa1a5104"></script>
 <script src="today.js?v=c2c82dfe9e"></script>
+<script src="growth.js?v=8f76452283"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

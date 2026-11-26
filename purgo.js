@@ -1094,7 +1094,7 @@ function syncEditing(){
   const s = $('saveQ'); if(s) s.textContent = editing ? 'Update quote' : 'Save quote';
 }
 /* ---------- Admin: a settings menu, each section opened on its own (#admin/<section>) ---------- */
-const ADMIN_SECS = {business:'Your business', pricing:'Prices and costs', email:'Email', invoicing:'Invoicing and payments', reminders:'Reminders', staff:'Staff'};
+const ADMIN_SECS = {business:'Your business', pricing:'Prices and costs', email:'Email', invoicing:'Invoicing and payments', reminders:'Reminders', growth:'Reviews & repeat work', staff:'Staff'};
 let adminSec = '';
 function adminOpen(sec){
   sec = ADMIN_SECS[sec] ? sec : '';
@@ -1112,6 +1112,7 @@ function adminOpen(sec){
   if(sec==='invoicing' && typeof INVOICES!=='undefined') INVOICES.renderAdmin();
   if(sec==='reminders' && typeof REMINDERS!=='undefined') REMINDERS.renderAdmin();
   if(sec==='business' && typeof REMINDERS!=='undefined') REMINDERS.renderBusiness();
+  if(sec==='growth' && typeof GROWTH!=='undefined') GROWTH.renderAdmin();
 }
 document.querySelectorAll('#admHome [data-sec]').forEach(b=> b.onclick = ()=>{ location.hash = '#admin/' + b.dataset.sec; });
 $('admBack').onclick = ()=>{ location.hash = '#admin'; };

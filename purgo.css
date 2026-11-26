@@ -661,7 +661,7 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .adm-menu .ch{color:var(--muted);font-size:22px;line-height:1}
 #admBack{margin-bottom:4px}
 /* the section title is already at the top, so a card's own heading would repeat it */
-#bizCard>h2:first-child,#mailCard>h2:first-child,#invCard>h2:first-child,#remCard>h2:first-child,.adm-sec[data-sec="staff"]>.card>h2:first-child{display:none}
+#bizCard>h2:first-child,#growCard>h2:first-child,#mailCard>h2:first-child,#invCard>h2:first-child,#remCard>h2:first-child,.adm-sec[data-sec="staff"]>.card>h2:first-child{display:none}
 
 /* Home dashboard */
 .hm-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:16px}
@@ -739,3 +739,11 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .td-nav .btn{min-width:40px;font-size:18px;line-height:1}
 .td-who label{display:flex;align-items:center;gap:8px;font-weight:600}
 .td-who select{width:auto;margin-left:0}
+
+/* Reviews & repeat work */
+.gr-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}
+.gr-stats div{background:var(--soft);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column}
+.gr-stats b{font-size:1.4rem;font-family:var(--f-display)}
+.gr-stats span{font-size:13px;color:var(--muted)}
+.gr-stars{flex:none;color:#e0a314;letter-spacing:1px;min-width:78px}
+.gr-stars.low{color:var(--bad)}

@@ -4,7 +4,7 @@
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { escHtml } from "./gmail.ts";
 
-export type Business = { trading_name: string; legal_name?: string | null; phone?: string | null; email?: string | null; website?: string | null; sign_off?: string | null; sms_sender?: string | null };
+export type Business = { trading_name: string; legal_name?: string | null; phone?: string | null; email?: string | null; website?: string | null; sign_off?: string | null; sms_sender?: string | null; portal_url?: string | null };
 export type Template = { key: string; name: string; channel?: string; enabled: boolean; subject: string | null; body: string; send_hour: number | null };
 
 export async function getBusiness(db: SupabaseClient): Promise<Business> {
@@ -47,3 +47,7 @@ export function ukNow(offsetDays = 0) {
 }
 export const longDate = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 export const fmtDate = (d: string | null) => d ? new Date(d + (d.length === 10 ? "T12:00:00Z" : "")).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "";
+
+// where customer links go: the business's own Portal address, else this project's
+export const portalUrl = (b?: Business | null) => (b && b.portal_url ? String(b.portal_url).replace(/\/+$/, "") :
+  (/iixqkqkmdholetujuqin/.test(Deno.env.get("SUPABASE_URL") || "") ? "https://portal.purgo-clean.com" : "https://dev.purgo-quote.pages.dev"));
