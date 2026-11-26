@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=e8c057b3ce">
+<link rel="stylesheet" href="purgo.css?v=5674d745f0">
 </head>
 <body>
 <header class="topbar">
@@ -22,6 +22,7 @@
     <nav class="nav" id="nav" hidden>
       <button type="button" data-view="accounts">Accounts</button>
       <button type="button" data-view="jobs">Jobs</button>
+      <button type="button" data-view="invoices">Invoices</button>
       <button type="button" data-view="quote">Quote</button>
       <button type="button" data-view="quotes">Saved quotes</button>
       <button type="button" data-view="portfolio">Portfolios</button>
@@ -293,10 +294,12 @@
   </section>
 </main>
 
-<!-- ACCOUNTS (filled by accounts.js?v=b80bc26002) -->
+<!-- ACCOUNTS (filled by accounts.js?v=e5cd1ac37f) -->
 <main id="view-accounts" class="wrap" hidden></main>
 
 <main id="view-jobs" class="wrap" hidden></main>
+
+<main id="view-invoices" class="wrap" hidden></main>
 <!-- PORTFOLIOS (filled by portfolio.js?v=704c4911e9) -->
 <main id="view-portfolio" class="wrap" hidden></main>
 <!-- CUSTOMER PORTAL (filled by portal.js?v=4afff4439d) -->
@@ -410,6 +413,7 @@
       </div>
     </section>
   <section class="card" id="mailCard"></section>
+  <section class="card" id="invCard"></section>
   <section class="card">
     <h2>Staff</h2>
     <p class="hint">To add someone: in Supabase open <b>Authentication → Users → Add user → Create new user</b>, enter their email and a temporary password, and tick <b>Auto Confirm User</b>. They appear here as staff. Switch someone off when they leave; their quotes stay.</p>
@@ -421,12 +425,13 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=b003427ffd"></script>
+<script src="purgo.js?v=7e4cc417c8"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=704c4911e9"></script>
-<script src="mail.js?v=889da193d1"></script>
-<script src="accounts.js?v=b80bc26002"></script>
+<script src="mail.js?v=d8be2b4470"></script>
+<script src="accounts.js?v=e5cd1ac37f"></script>
 <script src="jobs.js?v=4240977ba5"></script>
+<script src="invoices.js?v=70c73d3575"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

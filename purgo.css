@@ -619,3 +619,27 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .sec-row.off{opacity:.55;cursor:default}
 .sec-tot{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);padding-top:10px;margin-top:6px}
 .sec-tot b{font-size:1.25rem}
+/* ---------- Invoices ---------- */
+.pill.inv-st.sent{background:var(--soft);color:var(--brand)}
+.pill.inv-st.part_paid{background:var(--warn-bg);color:var(--warn)}
+.pill.inv-st.paid{background:var(--good-bg);color:var(--good)}
+.pill.inv-st.overdue{background:var(--bad-bg);color:var(--bad)}
+.pill.inv-st.void{background:var(--soft);color:var(--muted);text-decoration:line-through}
+.inv-bad{color:var(--bad)}
+.inv-dlg{max-width:760px}
+.inv-lines{overflow-x:auto;margin-top:10px}
+.inv-lines table{width:100%;border-collapse:collapse}
+.inv-lines th{font-size:.78rem;color:var(--muted);text-align:left;padding:4px 6px;font-weight:600}
+.inv-lines td{padding:4px 6px;vertical-align:middle}
+.inv-lines td input:not([type=checkbox]){width:100%;min-width:60px}
+.inv-lines td:first-child{width:55%}
+.inv-lines td:first-child input{min-width:200px}
+.inv-lines td:nth-child(2){width:70px}.inv-lines td:nth-child(3){width:110px}
+.inv-lines .a{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.inv-lines .ck{white-space:nowrap}
+.inv-pay{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px}
+.inv-acts{margin-top:16px;flex-wrap:wrap}
+.inv-acts .sp{flex:1}
+.inv-v{cursor:pointer;grid-template-columns:auto 1fr auto}
+.inv-v input{width:20px;height:20px;accent-color:var(--brand)}
+.sm-sel{font:inherit;font-size:.85rem;padding:5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink)}
