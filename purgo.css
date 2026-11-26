@@ -662,3 +662,41 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 #admBack{margin-bottom:4px}
 /* the section title is already at the top, so a card's own heading would repeat it */
 #bizCard>h2:first-child,#mailCard>h2:first-child,#invCard>h2:first-child,#remCard>h2:first-child,.adm-sec[data-sec="staff"]>.card>h2:first-child{display:none}
+
+/* Home dashboard */
+.hm-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.hm-tile{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--water);border-radius:12px;padding:12px 14px;color:var(--ink);font:inherit;cursor:pointer}
+.hm-tile:hover,.hm-tile:focus-visible{background:var(--soft)}
+.hm-tile:disabled{cursor:default}
+.hm-tile.warn{border-left-color:var(--warn)}
+.hm-tile.bad{border-left-color:var(--bad)}
+.hm-tile.good{border-left-color:var(--good)}
+.hm-l{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.hm-b{font-family:var(--f-display);font-size:1.6rem;font-weight:800;line-height:1.15}
+.hm-s{font-size:13px;color:var(--muted)}
+.hm-tile.bad .hm-s b{color:var(--bad)}
+.hm-tile.warn .hm-s b{color:var(--warn)}
+.hm-cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start}
+.hm-side{display:flex;flex-direction:column;gap:16px}
+@media (max-width:860px){.hm-cols{grid-template-columns:1fr}}
+.hm-day+.hm-day{margin-top:14px}
+.hm-dh{display:flex;justify-content:space-between;gap:8px;padding-bottom:4px;border-bottom:1px solid var(--line);margin-bottom:2px}
+.hm-dh span{color:var(--muted);font-size:13px}
+.hm-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 4px;background:none;border:0;border-bottom:1px solid var(--line);text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+.hm-row:last-child{border-bottom:0}
+.hm-row:hover,.hm-row:focus-visible{background:var(--soft)}
+.hm-row .t{width:44px;flex:none;color:var(--muted);font-size:13px}
+.hm-row .m{flex:1;min-width:0;display:flex;flex-direction:column}
+.hm-row .m small{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm-row .v{flex:none;font-weight:700}
+.hm-row .tag{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 7px;border-radius:999px;background:var(--soft);color:var(--muted);min-width:68px;text-align:center}
+.hm-row .tag.warn{background:var(--warn-bg);color:var(--warn)}
+.hm-row .tag.bad{background:var(--bad-bg);color:var(--bad)}
+.hm-row .tag.good{background:var(--good-bg);color:var(--good)}
+.hm-bars{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;height:170px;align-items:end;margin:8px 0 6px}
+.hm-bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.hm-bf{width:100%;max-width:38px;background:var(--mist);border-radius:6px 6px 0 0}
+.hm-bar.now .hm-bf{background:var(--water)}
+.hm-bv{font-size:11px;color:var(--muted);white-space:nowrap;margin-bottom:2px}
+.hm-bl{font-size:11px;color:var(--muted);margin-top:4px;white-space:nowrap}
+.hm-bn{font-size:11px;font-weight:700}
