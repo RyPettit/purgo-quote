@@ -734,3 +734,8 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .td-ph span{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:700;text-transform:uppercase;background:rgba(0,0,0,.55);color:#fff;padding:1px 5px;border-radius:4px}
 .td-noteform textarea{width:100%;margin-top:10px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .td-reasons{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.td-nav{flex-wrap:nowrap}
+.td-nav input[type=date]{width:auto;min-width:0}
+.td-nav .btn{min-width:40px;font-size:18px;line-height:1}
+.td-who label{display:flex;align-items:center;gap:8px;font-weight:600}
+.td-who select{width:auto;margin-left:0}
