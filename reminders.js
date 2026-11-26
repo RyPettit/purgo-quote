@@ -14,6 +14,10 @@ const REMINDERS = (()=>{
   };
   VARS.payment_reminder_final = VARS.payment_reminder_1;
   VARS.visit_reminder_sms = VARS.visit_reminder.filter(([v])=>v!=='visit_list' && v!=='sign_off');
+  VARS.review_request = [['link','Link to the "how did we do?" page'],['service','What was done'],['date','When it was done'], ...COMMON];
+  VARS.repeat_prompt = [['link','Link to say "yes, book me in"'],['service','The service that\'s due'],['last_date','When it was last done'], ...COMMON];
+  VARS.win_back = [['link','Link to say "yes, get in touch"'],['last_date','Their last visit'], ...COMMON];
+  ['review_request','repeat_prompt','win_back'].forEach(k => VARS[k + '_sms'] = VARS[k].filter(([v]) => v !== 'sign_off'));
   VARS.payment_reminder_1_sms = VARS.payment_reminder_final_sms = [['pay_link','Link to view and pay the invoice'], ...VARS.payment_reminder_1.filter(([v])=>v!=='how_to_pay' && v!=='sign_off')];
   const ORDER = ['visit_reminder','visit_reminder_sms','payment_reminder_1','payment_reminder_1_sms','payment_reminder_final','payment_reminder_final_sms'];
   // texts: 160 plain characters is one text; longer ones are charged as 153-character parts
@@ -22,7 +26,7 @@ const REMINDERS = (()=>{
   const SAMPLE = {first_name:'Sam', customer_name:'Sam Smith', date:'Friday 27 November', time:'around 10:30', service:'Window cleaning', address:'12 Example Road, Hull',
     visit_list:'• Window cleaning at 12 Example Road, around 10:30\n• Gutter clean at 12 Example Road, around 11:00',
     invoice_no:'INV-1000', amount_due:'£45.00', total:'£45.00', work_date:'24 November 2026', due_date:'8 December 2026',
-    how_to_pay:'You can pay by card using the button below, or by bank transfer using the details below.', pay_link:'portal.purgo-clean.com/i?t=a1b2c3d4-e5f6-7a8b-9c0d-e1f2a3b4c5d6'};
+    how_to_pay:'You can pay by card using the button below, or by bank transfer using the details below.', link:'portal.purgo-clean.com/f?t=a1b2c3d4', last_date:'14 November 2025', pay_link:'portal.purgo-clean.com/i?t=a1b2c3d4-e5f6-7a8b-9c0d-e1f2a3b4c5d6'};
   const fill = (t, v) => String(t||'').replace(/\{([a-z_]+)\}/g, (_, k)=> v[k] ?? '').replace(/\n{3,}/g, '\n\n').trim();
   const HOURS = Array.from({length:9}, (_, i)=>i+12);   // 12:00 to 20:00
   let biz = null, tpls = [], inv = null, sms = {configured:false};
@@ -95,20 +99,23 @@ const REMINDERS = (()=>{
     const c = $('remCard'); if(!c) return;
     if(ROLE!=='admin'){ c.hidden = true; return; }
     c.innerHTML = `<h2>Reminders</h2><p class="hint">Loading…</p>`;
+    await renderTemplates(c, ORDER, () => `<h2>Reminders</h2>
+      <p class="hint">Messages the Portal sends to customers on its own, from the connected mailbox. Edit the wording here: words in {braces} are filled in for each customer, and your name, phone and sign-off come from Your business.</p>
+      <h3 style="margin-top:18px">Text messages</h3>
+      ${sms.configured ? `<p class="hint">On, through ${sms.provider==='twilio' ? 'Twilio' : 'The SMS Works'}. Customers get texts if their account's "Reminders by" is set to Text message or Email and text, and they have a UK mobile number on the account.</p>`
+        : `<p class="hint">Not set up yet. Texts need an account with an SMS provider (The SMS Works is UK-based and costs a few pence a text). Once its API key is added to the Portal, the text reminders below start sending to customers set to get texts.</p>`}`);
+  }
+  // the editable messages for the given template keys, in that order, under head()
+  async function renderTemplates(c, keys, head){
     try{ sms = (await fn({action:'status'})).sms || sms; }catch(e){ /* the reminders function isn't reachable: texts show as not set up */ }
     const [b, t, s] = await Promise.all([
       sb.from('business_profile').select('*').eq('id', 1).maybeSingle(),
       sb.from('message_templates').select('*').order('sort'),
       sb.from('invoice_settings').select('remind_days').eq('id', 1).maybeSingle()]);
-    if(b.error || t.error){ c.innerHTML = `<h2>Reminders</h2><p class="note b">${esc((b.error||t.error).message)}</p>`; return; }
+    if(b.error || t.error){ c.insertAdjacentHTML('beforeend', `<p class="note b">${esc((b.error||t.error).message)}</p>`); return; }
     biz = b.data || {trading_name:''}; inv = s.data || {};
-    tpls = (t.data || []).sort((x,y)=> (ORDER.indexOf(x.key)+1 || 99) - (ORDER.indexOf(y.key)+1 || 99));
-    c.innerHTML = `<h2>Reminders</h2>
-      <p class="hint">Messages the Portal sends to customers on its own, from the connected mailbox. Edit the wording here: words in {braces} are filled in for each customer, and your name, phone and sign-off come from Your business.</p>
-      <h3 style="margin-top:18px">Text messages</h3>
-      ${sms.configured ? `<p class="hint">On, through ${sms.provider==='twilio' ? 'Twilio' : 'The SMS Works'}. Customers get texts if their account's "Reminders by" is set to Text message or Email and text, and they have a UK mobile number on the account.</p>`
-        : `<p class="hint">Not set up yet. Texts need an account with an SMS provider (The SMS Works is UK-based and costs a few pence a text). Once its API key is added to the Portal, the text reminders below start sending to customers set to get texts.</p>`}
-      ${tpls.map(tplHTML).join('')}`;
+    tpls = (t.data || []).filter(x => keys.includes(x.key)).sort((x,y)=> keys.indexOf(x.key) - keys.indexOf(y.key));
+    c.innerHTML = head() + tpls.map(tplHTML).join('');
     c.querySelectorAll('.rm-tpl').forEach(box=>{
       const k = box.dataset.tk, q = s=>box.querySelector(s);
       let last = q('[data-tf="body"]');
@@ -148,5 +155,5 @@ const REMINDERS = (()=>{
     const cnt = box.querySelector('[data-count]');
     if(cnt){ const n = [...plain(body)].length, p = parts(body); cnt.textContent = `About ${n} characters with example details: ${p} text${p>1?'s':''} per customer${p>1?' (each text is charged)':''}. Real names and addresses can make it longer.`; }
   }
-  return {renderAdmin, renderBusiness};
+  return {renderAdmin, renderBusiness, renderTemplates, fn, smsStatus:() => sms};
 })();

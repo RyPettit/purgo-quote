@@ -24,7 +24,8 @@ const HOME = (()=>{
     const monthStart = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1), lastStart = ymd(lastMonth);
     const back120 = ymd(addDays(now, -120)), back90 = new Date(Date.now() - 90*864e5).toISOString();
-    const [vis, quo, jobq, inv, pay, done, lines, acc] = await Promise.all([
+    const back14 = new Date(Date.now() - 14*864e5).toISOString();
+    const [vis, quo, jobq, inv, pay, done, lines, acc, fbk, yes] = await Promise.all([
       sb.from('visits').select('id,date,start_time,status,price,account_id,accounts(name),jobs(title,service,line)').gte('date', from).lte('date', to).in('status', ['booked','done']).order('date').order('start_time', {nullsFirst:false}).limit(2000),
       sb.from('quotes').select('id,quote_no,customer,address,total,accepted_total,status,sent_at,follow_up_at,viewed_at,accepted_at,declined_at,created_at,account_id').order('created_at', {ascending:false}).limit(1000),
       sb.from('jobs').select('quote_id').not('quote_id', 'is', null).limit(2000),
@@ -33,9 +34,12 @@ const HOME = (()=>{
       sb.from('visits').select('id,date,price,account_id').eq('status', 'done').gte('date', back120).limit(2000),
       sb.from('invoice_lines').select('visit_id').not('visit_id', 'is', null).limit(5000),
       sb.from('accounts').select('id,status,created_at').limit(5000),
+      sb.from('feedback').select('id,rating,comment,rated_at,account_id,accounts(name)').gte('rated_at', back90).order('rated_at', {ascending:false}).limit(500),
+      sb.from('marketing_sends').select('id,kind,service,response_note,responded_at,account_id,accounts(name)').eq('response', 'yes').gte('responded_at', back14).order('responded_at', {ascending:false}).limit(100),
     ]);
     const err = [vis, quo, jobq, inv, pay, done, lines, acc].find(r => r.error);
     if(err) throw err.error;
+    const ratings = fbk.error ? [] : (fbk.data || []);   // the reviews tables may not exist yet
     const invoiced = new Set((lines.data || []).map(l => l.visit_id));
     const booked = new Set((jobq.data || []).map(j => j.quote_id));
     const q = quo.data || [];
@@ -53,6 +57,7 @@ const HOME = (()=>{
       pays: pay.data || [],
       toInvoice: (done.data || []).filter(v => !invoiced.has(v.id) && +v.price > 0),
       accounts: acc.data || [],
+      ratings, low: ratings.filter(f => f.rating <= 3 && f.rated_at >= back14), yes: yes.error ? [] : (yes.data || []),
     };
   }
 
@@ -91,6 +96,7 @@ const HOME = (()=>{
       tile('Paid this month', whole(paidMonth), `Last month ${whole(paidLast)}`, 'invoices', 'good'),
       tile('Quotes won', winRate === null ? '–' : winRate + '%', winRate === null ? 'No quotes decided in the last 90 days' : `${D.won.length} of ${D.won.length + D.lost.length} decided, last 90 days`, 'quotes'),
       tile('Customers', String(active), `${plural(leads, 'lead')} · ${newAcc} new this month`, 'accounts'),
+      D.ratings.length ? tile('Reviews', (D.ratings.reduce((t, f) => t + f.rating, 0) / D.ratings.length).toFixed(1) + '★', `${plural(D.ratings.length, 'rating')}, last 90 days`, ROLE === 'admin' ? 'admin/growth' : '', D.low.length ? 'bad' : 'good') : '',
     ].join('');
 
     // coming up: the next 7 days, by day
@@ -113,6 +119,8 @@ const HOME = (()=>{
     D.followDue.forEach(x => att.push(`<button type="button" class="hm-row" data-openq="${x.id}"><span class="tag warn">Follow up</span><span class="m"><b>${esc(x.customer || x.address || 'Quote')}</b><small>${x.quote_no ? noLabel(x.quote_no) + ' · ' : ''}sent ${x.sent_at ? short(x.sent_at.slice(0,10)) : ''}${x.viewed_at ? ' · opened by the customer' : ''}</small></span><span class="v">${whole(x.total)}</span></button>`));
     D.toBook.forEach(x => att.push(`<button type="button" class="hm-row" data-openq="${x.id}"><span class="tag good">Book in</span><span class="m"><b>${esc(x.customer || x.address || 'Quote')}</b><small>${x.quote_no ? noLabel(x.quote_no) + ' · ' : ''}accepted ${x.accepted_at ? short(x.accepted_at.slice(0,10)) : ''}, no job made yet</small></span><span class="v">${whole(x.accepted_total || x.total)}</span></button>`));
     overdue.forEach(i => att.push(`<button type="button" class="hm-row" data-inv="${i.id}"><span class="tag bad">Overdue</span><span class="m"><b>${esc(i.bill_name || 'Customer')}</b><small>${typeof INVOICES!=='undefined' ? esc(INVOICES.invNo(i.invoice_no)) : 'Invoice ' + i.invoice_no} · ${plural(daysAgo(i.due_date), 'day')} overdue</small></span><span class="v">${whole(+i.total - +i.paid)}</span></button>`));
+    D.low.forEach(f => att.push(`<button type="button" class="hm-row" data-acc="${f.account_id}"><span class="tag bad">${f.rating}★</span><span class="m"><b>${esc((f.accounts||{}).name || 'Customer')}</b><small>${esc(f.comment || 'Low rating, no comment')}: get in touch</small></span><span class="v"></span></button>`));
+    D.yes.forEach(x => att.push(`<button type="button" class="hm-row" data-acc="${x.account_id}"><span class="tag good">Book in</span><span class="m"><b>${esc((x.accounts||{}).name || 'Customer')}</b><small>Said yes to ${x.kind === 'repeat' ? 'their ' + esc(x.service || 'service') + ' again' : 'more work'}${x.response_note ? ' · ' + esc(x.response_note) : ''}</small></span><span class="v"></span></button>`));
     if(D.toInvoice.length) att.push(`<button type="button" class="hm-row" data-go="invoices"><span class="tag warn">Invoice</span><span class="m"><b>${plural(D.toInvoice.length, 'visit')} done but not invoiced</b><small>Open Invoices to bill them</small></span><span class="v">${whole(sum(D.toInvoice, v => v.price))}</span></button>`);
     if(D.drafts.length) att.push(`<button type="button" class="hm-row" data-go="quotes"><span class="tag">Draft</span><span class="m"><b>${plural(D.drafts.length, 'quote')} not sent yet</b><small>Finish and send from Saved quotes</small></span><span class="v">${whole(sum(D.drafts, x => x.total))}</span></button>`);
 
@@ -125,7 +133,7 @@ const HOME = (()=>{
         </div>
       </div>`;
     wireHead();
-    el.querySelectorAll('[data-go]').forEach(b => b.onclick = () => show(b.dataset.go));
+    el.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const [v, sub] = b.dataset.go.split('/'); if(sub) location.hash = '#' + b.dataset.go; else show(v); });
     el.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => { if(typeof ACCOUNTS!=='undefined' && b.dataset.acc !== 'null') ACCOUNTS.open(b.dataset.acc); });
     el.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => { if(typeof INVOICES!=='undefined') INVOICES.openInvoice(b.dataset.inv, () => refresh(true)); });
   }
