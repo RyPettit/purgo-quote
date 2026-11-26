@@ -30,7 +30,18 @@ const INVOICES = (()=>{
     const {data} = await sb.from('invoice_settings').select('*').eq('id', 1).maybeSingle();
     return settings = data || {terms_days:14, vat_registered:false, vat_rate:20, auto_invoice:'off'};
   }
-  const sageNote = i => i.status==='draft' ? '' : i.sage_error ? `<small class="jb-err">Sage: ${esc(i.sage_error)}</small>` : i.sage_id && !i.sage_dirty ? `<small class="hint">In Sage</small>` : '';
+  // payment reminder status on an unpaid invoice, with a button to stop or restart them
+  const remindLine = (i, s) => {
+    const steps = (s.remind_days||[]).length;
+    if(!steps) return '';
+    const sent = Math.min(i.reminders_sent||0, steps);
+    const txt = i.no_reminders ? 'Automatic reminders are off for this invoice.'
+      : !i.email ? 'No automatic reminders: there\'s no email address on this invoice.'
+      : sent >= steps ? `All ${steps} reminder${steps===1?'':'s'} sent${i.last_reminded_at ? ', last on '+fmtD(i.last_reminded_at) : ''}. Chase it by phone if it's still unpaid.`
+      : `Reminders: ${sent} of ${steps} sent${i.last_reminded_at ? ' (last '+fmtD(i.last_reminded_at)+')' : ''}. Next after ${s.remind_days[sent]} days from the work date.`;
+    return `<p class="hint">${txt} <button class="btn sm" type="button" id="ivRem">${i.no_reminders || sent >= steps ? 'Turn reminders on' : 'Stop reminders'}</button></p>`;
+  };
+  const sageNote = i =>i.status==='draft' ? '' : i.sage_error ? `<small class="jb-err">Sage: ${esc(i.sage_error)}</small>` : i.sage_id && !i.sage_dirty ? `<small class="hint">In Sage</small>` : '';
 
   /* ---------- an account's invoices ---------- */
   async function loadAccount(accId){
@@ -162,6 +173,7 @@ const INVOICES = (()=>{
         ${voidForm ? `<div class="fields inv-pay"><label class="f wide">Why is it being voided?<input id="vdWhy" placeholder="e.g. raised in error, replaced by INV-…"></label>
             <p class="hint wide">The invoice stays on record marked Void, and is voided in Sage too. The customer's link will show it as void.</p>
             <div class="vb-actions wide"><button class="btn sm" type="button" id="vdCancel">Keep it</button><button class="btn sm del" type="button" id="vdGo">Void invoice</button></div></div>` : ''}
+        ${!draft && !voided && due>0 ? remindLine(i, s) : ''}
         ${i.sage_error ? `<p class="note b">Not in Sage yet: ${esc(i.sage_error)}</p>` : ''}
         <p class="note b" id="ivErr" hidden></p>
         <div class="vb-actions inv-acts">
@@ -212,6 +224,11 @@ const INVOICES = (()=>{
       };
       if(q('#ivLink')) q('#ivLink').onclick = async ()=>{ const url = `${location.origin}/i?t=${D.inv.share_token}`;
         try{ await navigator.clipboard.writeText(url); flash('Link copied: paste it into a text or WhatsApp'); }catch(e){ prompt('The customer\'s invoice link', url); } };
+      if(q('#ivRem')) q('#ivRem').onclick = async ()=>{ q('#ivRem').disabled = true;
+        const steps = (s.remind_days||[]).length, off = !D.inv.no_reminders && (D.inv.reminders_sent||0) < steps;
+        const r = await sb.from('invoices').update(off ? {no_reminders:true} : {no_reminders:false, ...((D.inv.reminders_sent||0) >= steps ? {reminders_sent:0} : {})}).eq('id', id);
+        if(r.error){ err(r.error.message); q('#ivRem').disabled = false; return; }
+        flash(off ? 'Reminders stopped for this invoice' : 'Reminders on for this invoice'); await reloadD(); };
       if(q('#ivPay')) q('#ivPay').onclick = ()=>{ payForm = true; draw(); q('#pyAmt').focus(); };
       if(q('#pyCancel')) q('#pyCancel').onclick = ()=>{ payForm = false; draw(); };
       if(q('#pySave')) q('#pySave').onclick = async ()=>{
@@ -334,6 +351,10 @@ const INVOICES = (()=>{
         <label class="f">Account number<input id="isAcc" inputmode="numeric" value="${esc(s.bank_account_no||'')}"></label>
         <label class="f">Offer Klarna from (£) <small>(blank: never)</small><input id="isKlarna" type="number" min="0" step="1" value="${s.klarna_min ?? ''}" placeholder="e.g. 300"></label>
         <p class="hint">Klarna lets customers spread the cost. It costs Purgō more than a card payment, so it's only offered on invoices of this amount or more.</p>
+        <p class="hint wide"><b>Payment reminders</b> (emailed automatically if an invoice isn't paid, counted from the day the work was done)</p>
+        <label class="f">First reminder after (days) <small>(blank: none)</small><input id="isRem1" type="number" min="1" max="60" value="${(s.remind_days||[])[0] ?? ''}" placeholder="e.g. 3"></label>
+        <label class="f">Final reminder after (days) <small>(blank: none)</small><input id="isRem2" type="number" min="1" max="90" value="${(s.remind_days||[])[1] ?? ''}" placeholder="e.g. 7"></label>
+        <p class="hint wide">Sent from hello@ between 9am and 6pm, Monday to Saturday, with the Pay now link and bank details, and never within 2 days of the last email. Bank transfers only count as paid once they're matched in Sage. Reminders can be stopped on any invoice.</p>
         <label class="f wide">Footer on invoices <small>(optional)</small><input id="isFoot" value="${esc(s.footer||'')}" placeholder="Thank you for choosing Purgō, a family run business."></label>
       </div>
       <div class="vb-actions" style="justify-content:flex-start;margin-top:8px"><button class="btn pri" type="button" id="isSave">Save invoicing settings</button></div>
@@ -356,7 +377,8 @@ const INVOICES = (()=>{
     $('isVat').onchange = ()=>{ $('isVatR').disabled = !$('isVat').checked; };
     $('isSave').onclick = async ()=>{
       const upd = {terms_days:Math.max(0, Math.min(120, parseInt(v('isTerms'))||0)), auto_invoice:$('isAuto').value, vat_registered:$('isVat').checked, vat_rate:+v('isVatR')||20,
-        bank_account_name:v('isBName')||null, bank_sort_code:v('isSort')||null, bank_account_no:v('isAcc')||null, footer:v('isFoot')||null, klarna_min:(+v('isKlarna')>0 ? +v('isKlarna') : null), updated_at:new Date().toISOString()};
+        bank_account_name:v('isBName')||null, bank_sort_code:v('isSort')||null, bank_account_no:v('isAcc')||null, footer:v('isFoot')||null, klarna_min:(+v('isKlarna')>0 ? +v('isKlarna') : null),
+        remind_days:[...new Set([v('isRem1'), v('isRem2')].map(x=>parseInt(x)).filter(n=>n>0))].sort((a,b)=>a-b), updated_at:new Date().toISOString()};
       $('isSave').disabled = true;
       const {error} = await sb.from('invoice_settings').update(upd).eq('id', 1);
       if(error){ $('isSave').disabled = false; flash('Not saved: ' + error.message); return; }
