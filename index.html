@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=5674d745f0">
+<link rel="stylesheet" href="purgo.css?v=b712eb094b">
 </head>
 <body>
 <header class="topbar">
@@ -294,7 +294,7 @@
   </section>
 </main>
 
-<!-- ACCOUNTS (filled by accounts.js?v=e5cd1ac37f) -->
+<!-- ACCOUNTS (filled by accounts.js?v=2b3aeeb19f) -->
 <main id="view-accounts" class="wrap" hidden></main>
 
 <main id="view-jobs" class="wrap" hidden></main>
@@ -414,6 +414,7 @@
     </section>
   <section class="card" id="mailCard"></section>
   <section class="card" id="invCard"></section>
+  <section class="card" id="remCard"></section>
   <section class="card">
     <h2>Staff</h2>
     <p class="hint">To add someone: in Supabase open <b>Authentication → Users → Add user → Create new user</b>, enter their email and a temporary password, and tick <b>Auto Confirm User</b>. They appear here as staff. Switch someone off when they leave; their quotes stay.</p>
@@ -425,13 +426,14 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=7e4cc417c8"></script>
+<script src="purgo.js?v=85ad9ebed6"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=704c4911e9"></script>
 <script src="mail.js?v=d8be2b4470"></script>
-<script src="accounts.js?v=e5cd1ac37f"></script>
+<script src="accounts.js?v=2b3aeeb19f"></script>
 <script src="jobs.js?v=4240977ba5"></script>
-<script src="invoices.js?v=d96635968b"></script>
+<script src="invoices.js?v=edef6c3c79"></script>
+<script src="reminders.js?v=618965c2bc"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

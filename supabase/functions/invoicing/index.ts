@@ -19,6 +19,7 @@
 //   {action:"pay", token}    -> {url} Stripe Checkout for what's left to pay
 // GET ?code=…&state=…  Sage's redirect after approving.   POST with Stripe-Signature: Stripe's webhook.
 import { cors, reply, serviceClient, trySend, escHtml, SIG_HTML, cleanEmails } from "../_shared/gmail.ts";
+import { getBusiness, getTemplate, businessVars, fill, firstName, ukNow } from "../_shared/messages.ts";
 
 type Db = ReturnType<typeof serviceClient>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -336,9 +337,9 @@ function emailHtml(L: Loaded, message: string, link: string) {
     `<div style="margin-top:24px;border:1px solid #d4e4ee;border-radius:10px;padding:14px">${invoiceTable(L)}</div>` +
     (L.s.footer ? `<p style="margin:12px 0 0;color:#53708a;font-size:13px">${escHtml(L.s.footer)}</p>` : "") + `</div>`;
 }
-const firstName = (s: string) => { const n = String(s || "").trim(); if (!n || /\b(ltd|limited|plc|llp|management|properties|lettings|services|group|council|school|church)\b/i.test(n)) return ""; return n.split(/\s+/)[0]; };
+const firstNameOf = (s: string) => { const n = String(s || "").trim(); if (!n || /\b(ltd|limited|plc|llp|management|properties|lettings|services|group|council|school|church)\b/i.test(n)) return ""; return n.split(/\s+/)[0]; };
 export function defaultMessage(L: Loaded, sender = "Purgō") {
-  const n = firstName(L.inv.bill_name), due = r2(L.inv.total - L.inv.paid);
+  const n = firstNameOf(L.inv.bill_name), due = r2(L.inv.total - L.inv.paid);
   return `${n ? `Hi ${n},` : "Hello,"}\n\nThank you for choosing Purgō. Your invoice ${invLabel(L.inv.invoice_no)} for ${gbp(L.inv.total)} is below${due > 0 ? `, due by ${fmtD(L.inv.due_date)}` : ""}.\n\n${due > 0 ? (stripeConfigured() ? "You can pay online by card using the button, or by bank transfer using the details below." : "You can pay by bank transfer using the details below.") + "\n\n" : ""}If you have any questions, give us a call on 07930 877034.\n\nKind regards,\n${sender}`;
 }
 
@@ -376,49 +377,41 @@ async function sendQueued(db: Db) {
   return sent;
 }
 
-// payment reminders: a set number of days after the work was done (Admin → Invoicing), only in working hours
-function ukNow() {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", hour: "numeric", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit" })
-    .formatToParts(new Date()).map(x => [x.type, x.value]));
-  return { day: `${p.year}-${p.month}-${p.day}`, hour: +p.hour, weekday: p.weekday };
-}
+// payment reminders: a set number of days after the work was done (Admin → Invoicing), only in working hours.
+// The wording is the editable templates in Admin → Reminders (payment_reminder_1 and payment_reminder_final).
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 864e5);
-export function reminderMessage(L: Loaded, n: number, total: number, workDate: string) {
-  const name = firstName(L.inv.bill_name), due = r2(L.inv.total - L.inv.paid), ref = invLabel(L.inv.invoice_no);
-  const how = stripeConfigured() ? "You can pay by card using the button below, or by bank transfer using the details below." : "You can pay by bank transfer using the details below.";
-  const last = n >= total;
-  return `${name ? `Hi ${name},` : "Hello,"}\n\n` +
-    (last ? `We still haven't received payment of ${gbp(due)} for invoice ${ref} (work done on ${fmtD(workDate)}), so this is a final reminder.`
-          : `Just a friendly reminder that invoice ${ref} for ${gbp(due)} (work done on ${fmtD(workDate)}) is still to be paid.`) +
-    `\n\n${how}\n\n` +
-    (last ? "If there's a problem with the work or the invoice, please give us a call on 07930 877034 and we'll sort it out." : "If you've already paid, thank you, and please ignore this email.") +
-    `\n\nKind regards,\nPurgō`;
-}
 async function sendReminders(db: Db, anyHour = false) {
   const now = ukNow();
   if (!anyHour && (now.weekday === "Sun" || now.hour < 9 || now.hour >= 18)) return 0;
   const { data: s } = await db.from("invoice_settings").select("remind_days").eq("id", 1).maybeSingle();
   const steps = ((s?.remind_days || []) as number[]).map(Number).filter(n => n > 0).sort((a, b) => a - b);
   if (!steps.length) return 0;
-  const { data: invs } = await db.from("invoices").select("id,issue_date,sent_at,last_reminded_at,reminders_sent,total,paid,email")
+  const { data: invs } = await db.from("invoices").select("id,issue_date,sent_at,last_reminded_at,reminders_sent,total,paid,email,accounts(name,kind,no_reminders)")
     .in("status", ["sent", "part_paid"]).eq("no_reminders", false).lt("reminders_sent", steps.length).limit(200);
+  const B = businessVars(await getBusiness(db));
   let sent = 0;
   for (const i of invs || []) {
-    if (!(r2(i.total - i.paid) > 0) || !cleanEmails(i.email || "").length) continue;
+    const acc: any = (i as any).accounts || {};
+    if (acc.no_reminders || !(r2(i.total - i.paid) > 0) || !cleanEmails(i.email || "").length) continue;
     const { data: ls } = await db.from("invoice_lines").select("service_date").eq("invoice_id", i.id);
     const work = (ls || []).map((l: any) => l.service_date).filter(Boolean).sort().pop() || i.issue_date;
-    const age = daysBetween(work, now.day);
-    const due = steps.filter(d => age >= d).length;                    // reminders that should have gone by now
+    const due = steps.filter(d => daysBetween(work, now.day) >= d).length;     // reminders that should have gone by now
     if (due <= i.reminders_sent) continue;
     // never chase sooner than 2 days after the invoice (or the last reminder) went out
     const lastOut = [i.last_reminded_at, i.sent_at].filter(Boolean).map((t: string) => t.slice(0, 10)).sort().pop() || i.issue_date;
     if (daysBetween(lastOut, now.day) < 2) continue;
     const n = i.reminders_sent + 1, L = await loadInvoice(db, { id: i.id });
     if (!L) continue;
-    const ref = invLabel(L.inv.invoice_no);
+    const t = await getTemplate(db, n >= steps.length && n > 1 ? "payment_reminder_final" : "payment_reminder_1");
+    if (t && !t.enabled) { await db.from("invoices").update({ reminders_sent: n }).eq("id", i.id); continue; }   // that reminder is switched off
+    const left = r2(L.inv.total - L.inv.paid);
+    const vars = { ...B, first_name: firstName(acc.name || L.inv.bill_name, acc.kind, L.inv.bill_name), customer_name: L.inv.bill_name || acc.name || "",
+      invoice_no: invLabel(L.inv.invoice_no), amount_due: gbp(left), total: gbp(L.inv.total), work_date: fmtD(work), due_date: fmtD(L.inv.due_date),
+      how_to_pay: stripeConfigured() ? "You can pay by card using the button below, or by bank transfer using the details below." : "You can pay by bank transfer using the details below." };
+    const subject = fill(t?.subject || "Reminder: invoice {invoice_no}", vars);
+    const message = fill(t?.body || "Hi {first_name},\n\nJust a reminder that invoice {invoice_no} for {amount_due} is still to be paid.\n\n{how_to_pay}\n\n{sign_off}", vars);
     try {
-      await sendInvoice(db, i.id, { subject: `${n >= steps.length && n > 1 ? "Final reminder" : "Reminder"}: Purgō invoice ${ref}`,
-        message: reminderMessage(L, n, steps.length, work), by: { id: null, name: "Auto reminder" } });
+      await sendInvoice(db, i.id, { subject, message, by: { id: null, name: "Auto reminder" } });
       await db.from("invoices").update({ reminders_sent: n, last_reminded_at: new Date().toISOString() }).eq("id", i.id);
       sent++;
     } catch (e) { console.error("reminder", i.id, (e as Error).message); }

@@ -351,10 +351,7 @@ const INVOICES = (()=>{
         <label class="f">Account number<input id="isAcc" inputmode="numeric" value="${esc(s.bank_account_no||'')}"></label>
         <label class="f">Offer Klarna from (£) <small>(blank: never)</small><input id="isKlarna" type="number" min="0" step="1" value="${s.klarna_min ?? ''}" placeholder="e.g. 300"></label>
         <p class="hint">Klarna lets customers spread the cost. It costs Purgō more than a card payment, so it's only offered on invoices of this amount or more.</p>
-        <p class="hint wide"><b>Payment reminders</b> (emailed automatically if an invoice isn't paid, counted from the day the work was done)</p>
-        <label class="f">First reminder after (days) <small>(blank: none)</small><input id="isRem1" type="number" min="1" max="60" value="${(s.remind_days||[])[0] ?? ''}" placeholder="e.g. 3"></label>
-        <label class="f">Final reminder after (days) <small>(blank: none)</small><input id="isRem2" type="number" min="1" max="90" value="${(s.remind_days||[])[1] ?? ''}" placeholder="e.g. 7"></label>
-        <p class="hint wide">Sent from hello@ between 9am and 6pm, Monday to Saturday, with the Pay now link and bank details, and never within 2 days of the last email. Bank transfers only count as paid once they're matched in Sage. Reminders can be stopped on any invoice.</p>
+        <p class="hint wide"><b>Payment reminders</b> to chase unpaid invoices, and their wording: Admin → Reminders.</p>
         <label class="f wide">Footer on invoices <small>(optional)</small><input id="isFoot" value="${esc(s.footer||'')}" placeholder="Thank you for choosing Purgō, a family run business."></label>
       </div>
       <div class="vb-actions" style="justify-content:flex-start;margin-top:8px"><button class="btn pri" type="button" id="isSave">Save invoicing settings</button></div>
@@ -377,8 +374,7 @@ const INVOICES = (()=>{
     $('isVat').onchange = ()=>{ $('isVatR').disabled = !$('isVat').checked; };
     $('isSave').onclick = async ()=>{
       const upd = {terms_days:Math.max(0, Math.min(120, parseInt(v('isTerms'))||0)), auto_invoice:$('isAuto').value, vat_registered:$('isVat').checked, vat_rate:+v('isVatR')||20,
-        bank_account_name:v('isBName')||null, bank_sort_code:v('isSort')||null, bank_account_no:v('isAcc')||null, footer:v('isFoot')||null, klarna_min:(+v('isKlarna')>0 ? +v('isKlarna') : null),
-        remind_days:[...new Set([v('isRem1'), v('isRem2')].map(x=>parseInt(x)).filter(n=>n>0))].sort((a,b)=>a-b), updated_at:new Date().toISOString()};
+        bank_account_name:v('isBName')||null, bank_sort_code:v('isSort')||null, bank_account_no:v('isAcc')||null, footer:v('isFoot')||null, klarna_min:(+v('isKlarna')>0 ? +v('isKlarna') : null), updated_at:new Date().toISOString()};
       $('isSave').disabled = true;
       const {error} = await sb.from('invoice_settings').update(upd).eq('id', 1);
       if(error){ $('isSave').disabled = false; flash('Not saved: ' + error.message); return; }
