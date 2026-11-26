@@ -20,6 +20,7 @@
 // GET ?code=…&state=…  Sage's redirect after approving.   POST with Stripe-Signature: Stripe's webhook.
 import { cors, reply, serviceClient, trySend, escHtml, SIG_HTML, cleanEmails } from "../_shared/gmail.ts";
 import { getBusiness, getTemplate, businessVars, fill, firstName, ukNow } from "../_shared/messages.ts";
+import { sendSms, smsConfigured, ukMobile } from "../_shared/sms.ts";
 
 type Db = ReturnType<typeof serviceClient>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -386,13 +387,16 @@ async function sendReminders(db: Db, anyHour = false) {
   const { data: s } = await db.from("invoice_settings").select("remind_days").eq("id", 1).maybeSingle();
   const steps = ((s?.remind_days || []) as number[]).map(Number).filter(n => n > 0).sort((a, b) => a - b);
   if (!steps.length) return 0;
-  const { data: invs } = await db.from("invoices").select("id,issue_date,sent_at,last_reminded_at,reminders_sent,total,paid,email,accounts(name,kind,no_reminders)")
+  const { data: invs } = await db.from("invoices").select("id,issue_date,sent_at,last_reminded_at,reminders_sent,total,paid,email,accounts(name,kind,phone,no_reminders,remind_by)")
     .in("status", ["sent", "part_paid"]).eq("no_reminders", false).lt("reminders_sent", steps.length).limit(200);
-  const B = businessVars(await getBusiness(db));
+  const biz = await getBusiness(db), B = businessVars(biz);
   let sent = 0;
   for (const i of invs || []) {
     const acc: any = (i as any).accounts || {};
-    if (acc.no_reminders || !(r2(i.total - i.paid) > 0) || !cleanEmails(i.email || "").length) continue;
+    const how = acc.no_reminders ? "none" : (acc.remind_by || "email");
+    const byEmail = (how === "email" || how === "both") && cleanEmails(i.email || "").length > 0;
+    const mob = (how === "sms" || how === "both") && smsConfigured() ? ukMobile(acc.phone) : "";
+    if (!(r2(i.total - i.paid) > 0) || (!byEmail && !mob)) continue;
     const { data: ls } = await db.from("invoice_lines").select("service_date").eq("invoice_id", i.id);
     const work = (ls || []).map((l: any) => l.service_date).filter(Boolean).sort().pop() || i.issue_date;
     const due = steps.filter(d => daysBetween(work, now.day) >= d).length;     // reminders that should have gone by now
@@ -402,19 +406,32 @@ async function sendReminders(db: Db, anyHour = false) {
     if (daysBetween(lastOut, now.day) < 2) continue;
     const n = i.reminders_sent + 1, L = await loadInvoice(db, { id: i.id });
     if (!L) continue;
-    const t = await getTemplate(db, n >= steps.length && n > 1 ? "payment_reminder_final" : "payment_reminder_1");
-    if (t && !t.enabled) { await db.from("invoices").update({ reminders_sent: n }).eq("id", i.id); continue; }   // that reminder is switched off
+    const key = n >= steps.length && n > 1 ? "payment_reminder_final" : "payment_reminder_1";
+    const t = byEmail ? await getTemplate(db, key) : null, ts = mob ? await getTemplate(db, key + "_sms") : null;
+    const useEmail = byEmail && (!t || t.enabled), useSms = !!mob && !!ts && ts.enabled;
+    if (!useEmail && !useSms) { await db.from("invoices").update({ reminders_sent: n }).eq("id", i.id); continue; }   // that reminder is switched off
     const left = r2(L.inv.total - L.inv.paid);
     const vars = { ...B, first_name: firstName(acc.name || L.inv.bill_name, acc.kind, L.inv.bill_name), customer_name: L.inv.bill_name || acc.name || "",
       invoice_no: invLabel(L.inv.invoice_no), amount_due: gbp(left), total: gbp(L.inv.total), work_date: fmtD(work), due_date: fmtD(L.inv.due_date),
-      how_to_pay: stripeConfigured() ? "You can pay by card using the button below, or by bank transfer using the details below." : "You can pay by bank transfer using the details below." };
-    const subject = fill(t?.subject || "Reminder: invoice {invoice_no}", vars);
-    const message = fill(t?.body || "Hi {first_name},\n\nJust a reminder that invoice {invoice_no} for {amount_due} is still to be paid.\n\n{how_to_pay}\n\n{sign_off}", vars);
-    try {
-      await sendInvoice(db, i.id, { subject, message, by: { id: null, name: "Auto reminder" } });
-      await db.from("invoices").update({ reminders_sent: n, last_reminded_at: new Date().toISOString() }).eq("id", i.id);
-      sent++;
-    } catch (e) { console.error("reminder", i.id, (e as Error).message); }
+      how_to_pay: stripeConfigured() ? "You can pay by card using the button below, or by bank transfer using the details below." : "You can pay by bank transfer using the details below.",
+      pay_link: `${PORTAL()}/i?t=${L.inv.share_token}` };
+    let ok = 0;
+    if (useEmail) {
+      const subject = fill(t?.subject || "Reminder: invoice {invoice_no}", vars);
+      const message = fill(t?.body || "Hi {first_name},\n\nJust a reminder that invoice {invoice_no} for {amount_due} is still to be paid.\n\n{how_to_pay}\n\n{sign_off}", vars);
+      try { await sendInvoice(db, i.id, { subject, message, by: { id: null, name: "Auto reminder" } }); ok++; }
+      catch (e) { console.error("reminder email", i.id, (e as Error).message); }
+    }
+    if (useSms) {
+      const text = fill(ts!.body, vars);
+      try {
+        const r = await sendSms(mob, text, biz.sms_sender || biz.trading_name);
+        await db.from("account_comms").insert({ account_id: L.inv.account_id, kind: "sms", direction: "out", subject: `Payment reminder (text): ${invLabel(L.inv.invoice_no)}`, body: text,
+          to_addr: "+" + mob, invoice_id: i.id, created_by_name: "Auto reminder", meta: { via: r.provider, id: r.id, invoice: invLabel(L.inv.invoice_no) } });
+        ok++;
+      } catch (e) { console.error("reminder text", i.id, (e as Error).message); }
+    }
+    if (ok) { await db.from("invoices").update({ reminders_sent: n, last_reminded_at: new Date().toISOString() }).eq("id", i.id); sent++; }
   }
   return sent;
 }

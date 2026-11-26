@@ -145,17 +145,21 @@ const ACCOUNTS = (()=>{
     });
   }
 
+  // how automatic reminders (appointments, payments) reach the customer
+  const REMIND = {email:'Email', sms:'Text message', both:'Email and text', none:'No reminders'};
+  const remindOf = a => a.remind_by || (a.no_reminders ? 'none' : 'email');
   /* ---------- new account ---------- */
   let naKind = 'res';
   function newForm(){
     const c = $('acNewCard'); c.hidden = false;
-    const keep = {}; c.querySelectorAll('input').forEach(i=>keep[i.id]=i.value);
+    const keep = {}; c.querySelectorAll('input,select').forEach(i=>keep[i.id]=i.value);
     c.innerHTML = `<div class="svc-head"><h2>New account</h2><div class="seg" id="naKind">${Object.entries(KINDS).map(([k,v])=>`<button type="button" data-v="${k}" class="${naKind===k?'on':''}">${v}</button>`).join('')}</div></div>
       <div class="fields" style="margin-top:12px">
         <label class="f">${naKind==='com'?'Business name':'Name'}<input id="naName" placeholder="${naKind==='com'?'e.g. Pure Block Management':'Customer name'}"></label>
         <label class="f">Phone<input id="naPhone" inputmode="tel"></label>
         <label class="f">Email<input id="naEmail" type="email" autocapitalize="off" spellcheck="false"></label>
         <label class="f">How they found us<input id="naSource" placeholder="Google, Facebook, referral…"></label>
+        <label class="f">Reminders by<select id="naRemind">${Object.entries(REMIND).map(([k,v])=>`<option value="${k}" ${k==='email'?'selected':''}>${v}</option>`).join('')}</select></label>
       </div>
       <h3>${naKind==='com'?'Business address':'Addresses'}</h3>
       <div id="naAddrs">${(naKind==='com' ? newAddrs.slice(0,1) : newAddrs).map((a,i)=>`<div class="fields ac-arow">
@@ -195,7 +199,7 @@ const ACCOUNTS = (()=>{
         }
       }
       btn.disabled = true;
-      const rec = {name, kind:naKind, phone:phone||null, email:email||null, billing_line:first.line||null, billing_postcode:first.pc||null, source:$('naSource').value.trim()||null, created_by_name:ME.name};
+      const rec = {name, kind:naKind, phone:phone||null, email:email||null, billing_line:first.line||null, billing_postcode:first.pc||null, source:$('naSource').value.trim()||null, remind_by:$('naRemind').value, no_reminders:$('naRemind').value==='none', created_by_name:ME.name};
       const {data, error} = await sb.from('accounts').insert(rec).select('id').single();
       if(error){ btn.disabled = false; flash('Not saved: ' + (isNetErr(error)?'no connection':error.message)); return; }
       for(const a of addrs) await sb.from('addresses').upsert({key:slug(normPc(a.pc)+'-'+a.line), line:a.line, postcode:a.pc, customer:name, phone, email, account_id:data.id}, {onConflict:'key'});
@@ -278,7 +282,7 @@ const ACCOUNTS = (()=>{
           <label class="f">How they found us<input data-af="source" value="${esc(a.source||'')}"></label>
           <label class="f">Squeegee ref<input data-af="squeegee_ref" value="${esc(a.squeegee_ref||'')}" placeholder="while we use both"></label>
           <label class="f wide">Tags<input data-af="tags" value="${esc((a.tags||[]).join(', '))}" placeholder="e.g. window round, monthly, VIP"></label>
-          <label class="ck wide"><input type="checkbox" data-af="no_reminders" ${a.no_reminders?'checked':''}> No automatic reminders (appointments or payments)</label>
+          <label class="f">Reminders by<select data-af="remind_by">${Object.entries(REMIND).map(([k,v])=>`<option value="${k}" ${remindOf(a)===k?'selected':''}>${v}</option>`).join('')}</select></label>
           <label class="f wide">Notes<textarea data-af="notes" rows="3" placeholder="Gate code, parking, preferences…">${esc(a.notes||'')}</textarea></label>
         </div>
         <div class="vb-actions" style="margin-top:12px"><span class="hint" id="acSaved"></span><button class="btn pri" type="button" id="acSave" disabled>Save changes</button></div>
@@ -433,7 +437,7 @@ const ACCOUNTS = (()=>{
     const form = $('acForm');
     if(form){
       const mark = ()=>{ $('acSave').disabled = false; $('acSaved').textContent = 'Unsaved changes'; };
-      form.querySelectorAll('[data-af]').forEach(el=> el.addEventListener(el.type==='checkbox' ? 'change' : 'input', mark));
+      form.querySelectorAll('[data-af]').forEach(el=> el.addEventListener(el.type==='checkbox' || el.tagName==='SELECT' ? 'change' : 'input', mark));
       $('acSave').onclick = async ()=>{
         const upd = {};
         form.querySelectorAll('[data-af]').forEach(el=>{ const k = el.dataset.af; let v = el.value.trim();
@@ -441,8 +445,9 @@ const ACCOUNTS = (()=>{
           else if(k==='tags') v = v.split(',').map(x=>x.trim()).filter(Boolean);
           else if(k==='email') v = v.toLowerCase() || null;
           else if(k==='billing_postcode') v = fmtPc(v) || null;
-          else if(k!=='name' && k!=='kind' && k!=='status') v = v || null;
+          else if(k!=='name' && k!=='kind' && k!=='status' && k!=='remind_by') v = v || null;
           upd[k] = v; });
+        if(upd.remind_by) upd.no_reminders = upd.remind_by === 'none';
         if(!upd.name){ flash('The account needs a name'); return; }
         $('acSave').disabled = true;
         const {data, error} = await sb.from('accounts').update(upd).eq('id', a.id).select('*').single();
