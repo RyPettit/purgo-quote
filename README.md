@@ -32,8 +32,6 @@ change prices.
 | `supabase/messages.sql` | Business details, message templates, appointment reminders (sent by the reminders function every 10 minutes). Run after reminders.sql. |
 | `supabase/functions/reminders` | Sends tomorrow's appointment reminders after the set time, and test messages from Admin → Reminders |
 | `docs/white-label.md` | How to build so the Portal can be set up for any trade business, and what's still hard-coded |
-| `today.js` | Today: the day's jobs on a phone, with directions, call, notes, done or skipped (with a reason) and before/after photos; works without signal |
-| `supabase/today.sql` | Skip reasons on visits, and the visit photos table and private visit-photos bucket |
 | `supabase/sms.sql` | Text message reminders: each account's "Reminders by" (email, text, both, none), the text sender name and the text templates. Run after messages.sql. |
 | `supabase/functions/_shared/sms.ts` | Sends texts through The SMS Works (SMS_PROVIDER=smsworks, SMS_API_KEY) or Twilio (SMS_PROVIDER=twilio, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) |
 | `supabase/reminders.sql` | Payment reminders: days after the work to chase unpaid invoices (default 3 and 7), and per-invoice reminder status. Run after invoices.sql. |

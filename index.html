@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=92b4145f25">
+<link rel="stylesheet" href="purgo.css?v=65f5546a47">
 </head>
 <body>
 <header class="topbar">
@@ -21,7 +21,6 @@
     <a class="brand" href="#home" aria-label="Purgō Portal"><img class="em" src="brand/emblem-light.png" alt=""><img class="wm" src="brand/wordmark-light.png" alt="purgō"><span class="devbadge dev-only">DEV</span></a>
     <nav class="nav" id="nav" hidden>
       <button type="button" data-view="home">Home</button>
-      <button type="button" data-view="today">Today</button>
       <button type="button" data-view="accounts">Accounts</button>
       <button type="button" data-view="jobs">Jobs</button>
       <button type="button" data-view="invoices">Invoices</button>
@@ -299,8 +298,6 @@
 <!-- ACCOUNTS (filled by accounts.js?v=e22525f38e) -->
 <main id="view-home" class="wrap" hidden></main>
 
-<main id="view-today" class="wrap" hidden></main>
-
 <main id="view-accounts" class="wrap" hidden></main>
 
 <main id="view-jobs" class="wrap" hidden></main>
@@ -444,7 +441,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=62c6d20d7c"></script>
+<script src="purgo.js?v=60b0145765"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=704c4911e9"></script>
 <script src="mail.js?v=d92cda6caf"></script>
@@ -453,7 +450,6 @@
 <script src="invoices.js?v=d29fb10d35"></script>
 <script src="reminders.js?v=9c63bead13"></script>
 <script src="home.js?v=28795eee1f"></script>
-<script src="today.js?v=c2c82dfe9e"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>
