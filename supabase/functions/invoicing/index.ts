@@ -13,7 +13,7 @@
 //   {action:"sage_options"}           admin -> {ledgers, banks, taxRates}  lists from Sage to choose from
 //   {action:"sage_choose", …ids}      admin -> {ok}
 //   {action:"send", invoiceId, to, cc, subject, message} -> {sent, link}   emails the invoice (issues a draft first)
-//   {action:"sync"}  (x-purgo-key or staff)  -> copies invoices and payments to Sage, reads back payments, emails queued invoices
+//   {action:"sync"}  (x-purgo-key or staff)  -> copies invoices and payments to Sage, reads back payments, emails queued invoices and payment reminders
 // Customer (no login, POST JSON with the invoice's token):
 //   {action:"view", token}   -> the invoice
 //   {action:"pay", token}    -> {url} Stripe Checkout for what's left to pay
@@ -376,6 +376,56 @@ async function sendQueued(db: Db) {
   return sent;
 }
 
+// payment reminders: a set number of days after the work was done (Admin → Invoicing), only in working hours
+function ukNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", hour: "numeric", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  return { day: `${p.year}-${p.month}-${p.day}`, hour: +p.hour, weekday: p.weekday };
+}
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 864e5);
+export function reminderMessage(L: Loaded, n: number, total: number, workDate: string) {
+  const name = firstName(L.inv.bill_name), due = r2(L.inv.total - L.inv.paid), ref = invLabel(L.inv.invoice_no);
+  const how = stripeConfigured() ? "You can pay by card using the button below, or by bank transfer using the details below." : "You can pay by bank transfer using the details below.";
+  const last = n >= total;
+  return `${name ? `Hi ${name},` : "Hello,"}\n\n` +
+    (last ? `We still haven't received payment of ${gbp(due)} for invoice ${ref} (work done on ${fmtD(workDate)}), so this is a final reminder.`
+          : `Just a friendly reminder that invoice ${ref} for ${gbp(due)} (work done on ${fmtD(workDate)}) is still to be paid.`) +
+    `\n\n${how}\n\n` +
+    (last ? "If there's a problem with the work or the invoice, please give us a call on 07930 877034 and we'll sort it out." : "If you've already paid, thank you, and please ignore this email.") +
+    `\n\nKind regards,\nPurgō`;
+}
+async function sendReminders(db: Db, anyHour = false) {
+  const now = ukNow();
+  if (!anyHour && (now.weekday === "Sun" || now.hour < 9 || now.hour >= 18)) return 0;
+  const { data: s } = await db.from("invoice_settings").select("remind_days").eq("id", 1).maybeSingle();
+  const steps = ((s?.remind_days || []) as number[]).map(Number).filter(n => n > 0).sort((a, b) => a - b);
+  if (!steps.length) return 0;
+  const { data: invs } = await db.from("invoices").select("id,issue_date,sent_at,last_reminded_at,reminders_sent,total,paid,email")
+    .in("status", ["sent", "part_paid"]).eq("no_reminders", false).lt("reminders_sent", steps.length).limit(200);
+  let sent = 0;
+  for (const i of invs || []) {
+    if (!(r2(i.total - i.paid) > 0) || !cleanEmails(i.email || "").length) continue;
+    const { data: ls } = await db.from("invoice_lines").select("service_date").eq("invoice_id", i.id);
+    const work = (ls || []).map((l: any) => l.service_date).filter(Boolean).sort().pop() || i.issue_date;
+    const age = daysBetween(work, now.day);
+    const due = steps.filter(d => age >= d).length;                    // reminders that should have gone by now
+    if (due <= i.reminders_sent) continue;
+    // never chase sooner than 2 days after the invoice (or the last reminder) went out
+    const lastOut = [i.last_reminded_at, i.sent_at].filter(Boolean).map((t: string) => t.slice(0, 10)).sort().pop() || i.issue_date;
+    if (daysBetween(lastOut, now.day) < 2) continue;
+    const n = i.reminders_sent + 1, L = await loadInvoice(db, { id: i.id });
+    if (!L) continue;
+    const ref = invLabel(L.inv.invoice_no);
+    try {
+      await sendInvoice(db, i.id, { subject: `${n >= steps.length && n > 1 ? "Final reminder" : "Reminder"}: Purgō invoice ${ref}`,
+        message: reminderMessage(L, n, steps.length, work), by: { id: null, name: "Auto reminder" } });
+      await db.from("invoices").update({ reminders_sent: n, last_reminded_at: new Date().toISOString() }).eq("id", i.id);
+      sent++;
+    } catch (e) { console.error("reminder", i.id, (e as Error).message); }
+  }
+  return sent;
+}
+
 /* =================== The customer's invoice page =================== */
 async function publicView(db: Db, token: string) {
   const L = await loadInvoice(db, { token });
@@ -465,7 +515,10 @@ Deno.serve(async (req) => {
       try { emailed = await sendQueued(db); } catch (e) { console.error("send queued", (e as Error).message); }
       try { sageRes = await sageSync(db); }
       catch (e) { await db.from("accounting_connection").update({ last_error: String((e as Error).message).slice(0, 500), last_sync: new Date().toISOString() }).eq("id", 1); return reply({ emailed, error: (e as Error).message }, 500); }
-      return reply({ emailed, sage: sageRes });
+      // after Sage, so bank transfers matched there count as paid before anyone is chased (the test Portal can try it out of hours)
+      let reminded = 0;
+      try { reminded = await sendReminders(db, DEV() && body.anyHour === true); } catch (e) { console.error("reminders", (e as Error).message); }
+      return reply({ emailed, reminded, sage: sageRes });
     }
 
     const me = await who(db, req);
