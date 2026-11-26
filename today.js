@@ -33,7 +33,9 @@ const TODAY = (()=>{
     if(cals.length) return;
     const {data} = await sb.from('staff_calendars').select('id,name,profile_id,active,sort').eq('active', true).order('sort');
     cals = data || [];
-    if(who === null){ const mine = cals.find(c => c.profile_id === (ME && ME.id)); who = mine ? mine.id : ''; }
+    // last choice on this phone; otherwise your own day (the admin sees everyone's)
+    if(who === null){ const kept = LS.get('purgoTodayWho:' + (ME && ME.id), null), mine = cals.find(c => c.profile_id === (ME && ME.id));
+      who = kept !== null && (kept === '' || cals.some(c => c.id === kept)) ? kept : (ROLE !== 'admin' && mine ? mine.id : ''); }
   }
   async function load(){
     loading = true; render();
@@ -203,7 +205,7 @@ const TODAY = (()=>{
     const el = root();
     el.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { const d = day(date); d.setDate(d.getDate() + +b.dataset.day); date = ymd(d); openNote = null; load(); });
     const dt = $('tdDate'); if(dt) dt.onchange = () => { if(dt.value){ date = dt.value; openNote = null; load(); } };
-    const w = $('tdWho'); if(w) w.onchange = () => { who = w.value; load(); };
+    const w = $('tdWho'); if(w) w.onchange = () => { who = w.value; LS.set('purgoTodayWho:' + (ME && ME.id), who); load(); };
     el.querySelectorAll('.td-card').forEach(c => {
       const v = visits.find(x => x.id === c.dataset.v); if(!v) return;
       const q = s => c.querySelector(s);
