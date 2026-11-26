@@ -4,15 +4,15 @@
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { escHtml } from "./gmail.ts";
 
-export type Business = { trading_name: string; legal_name?: string | null; phone?: string | null; email?: string | null; website?: string | null; sign_off?: string | null };
-export type Template = { key: string; name: string; enabled: boolean; subject: string | null; body: string; send_hour: number | null };
+export type Business = { trading_name: string; legal_name?: string | null; phone?: string | null; email?: string | null; website?: string | null; sign_off?: string | null; sms_sender?: string | null };
+export type Template = { key: string; name: string; channel?: string; enabled: boolean; subject: string | null; body: string; send_hour: number | null };
 
 export async function getBusiness(db: SupabaseClient): Promise<Business> {
   const { data } = await db.from("business_profile").select("*").eq("id", 1).maybeSingle();
   return data || { trading_name: "Purgō", phone: "07930 877034", email: "hello@purgo-clean.com", website: "www.purgo-clean.com", sign_off: "Kind regards,\nPurgō" };
 }
 export async function getTemplate(db: SupabaseClient, key: string): Promise<Template | null> {
-  const { data } = await db.from("message_templates").select("key,name,enabled,subject,body,send_hour").eq("key", key).maybeSingle();
+  const { data } = await db.from("message_templates").select("key,name,channel,enabled,subject,body,send_hour").eq("key", key).maybeSingle();
   return data || null;
 }
 export function businessVars(b: Business): Record<string, string> {

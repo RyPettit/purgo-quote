@@ -14,7 +14,8 @@ payments, reminders, email), which can later be set up for any trade business un
 
 ## Done
 - `business_profile` and `message_templates` (appointment reminder, payment reminders), editable in Admin → Reminders.
-- Per-customer opt-out of automatic reminders (`accounts.no_reminders`).
+- Per-customer choice of how reminders arrive (`accounts.remind_by`: email, text, both, none).
+- Text messages through a choice of provider (`_shared/sms.ts`), with the sender name in `business_profile.sms_sender`.
 
 ## Still hard-coded (to move into settings over time)
 Counted on 26 Nov 2026 (mentions of Purgō, its phone or domain):

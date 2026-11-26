@@ -1,9 +1,12 @@
 // Purgō: scheduled customer messages. Turn "Verify JWT" OFF (the 10-minute run has no Portal login; callers are checked here).
 //   {action:"run"}  (x-purgo-key)        -> emails tomorrow's appointment reminders once it's past the send time in Admin → Reminders
-//   {action:"test", key, subject, body}  admin -> sends that template, filled with example details, to the signed-in admin
+//   {action:"test", key, subject, body, phone}  admin -> sends that template, filled with example details, to the signed-in admin
+//                                               (by email, or for a text message to the phone number given)
+//   {action:"status"}                        -> {sms:{configured, provider}}
 // Messages come from public.message_templates and public.business_profile (see supabase/messages.sql).
 import { cors, reply, serviceClient, trySend, SIG_HTML, cleanEmails } from "../_shared/gmail.ts";
 import { getBusiness, getTemplate, businessVars, fill, firstName, textToHtml, ukNow, longDate } from "../_shared/messages.ts";
+import { sendSms, smsConfigured, smsProvider, ukMobile } from "../_shared/sms.ts";
 
 type Db = ReturnType<typeof serviceClient>;
 const SVC: Record<string, string> = { windows: "Window cleaning", gutters: "Gutter clean", roof: "Roof clean", pressure: "Pressure washing" };
@@ -26,11 +29,12 @@ async function send(db: Db, to: string[], subject: string, text: string) {
   return sent;
 }
 
-/* ---------- the day-before appointment reminder ---------- */
+/* ---------- the day-before appointment reminder (email, text or both, as chosen on the account) ---------- */
 async function visitReminders(db: Db) {
-  const t = await getTemplate(db, "visit_reminder");
-  if (!t || !t.enabled) return { sent: 0, why: "off" };
-  const now = ukNow(), hour = t.send_hour ?? 16;
+  const t = await getTemplate(db, "visit_reminder"), ts = await getTemplate(db, "visit_reminder_sms");
+  const emailOn = !!(t && t.enabled), smsOn = !!(ts && ts.enabled && smsConfigured());
+  if (!emailOn && !smsOn) return { sent: 0, why: "off" };
+  const now = ukNow(), hour = t?.send_hour ?? 16;             // texts go at the same time as the emails
   if (now.hour < hour || now.hour >= 21) return { sent: 0, why: "not time yet" };   // and never late in the evening
   const tomorrow = ukNow(1).day;
   const { data: vs, error } = await db.from("visits")
@@ -39,28 +43,46 @@ async function visitReminders(db: Db) {
   if (error) throw error;
   const byAcc = new Map<string, any[]>();
   for (const v of vs || []) { if (!v.account_id) continue; (byAcc.get(v.account_id) || byAcc.set(v.account_id, []).get(v.account_id)!).push(v); }
-  const B = businessVars(await getBusiness(db));
-  let sent = 0, skipped = 0;
+  const biz = await getBusiness(db), B = businessVars(biz);
+  let emails = 0, texts = 0, skipped = 0;
   for (const [accId, list] of byAcc) {
-    const { data: a } = await db.from("accounts").select("id,name,kind,email,no_reminders,status").eq("id", accId).maybeSingle();
-    const { data: pc } = await db.from("account_contacts").select("name,email").eq("account_id", accId).eq("is_primary", true).limit(1).maybeSingle();
-    const to = cleanEmails(a?.email || pc?.email || "");
-    if (!a || a.no_reminders || !to.length) { skipped++; await db.from("visits").update({ reminder_sent_at: new Date().toISOString() }).in("id", list.map(v => v.id)); continue; }
+    const done = () => db.from("visits").update({ reminder_sent_at: new Date().toISOString() }).in("id", list.map(v => v.id));
+    const { data: a } = await db.from("accounts").select("id,name,kind,email,phone,no_reminders,remind_by").eq("id", accId).maybeSingle();
+    const { data: pc } = await db.from("account_contacts").select("name,email,phone").eq("account_id", accId).eq("is_primary", true).limit(1).maybeSingle();
+    const how = !a || a.no_reminders ? "none" : (a.remind_by || "email");
+    const to = cleanEmails(a?.email || pc?.email || ""), mob = ukMobile(a?.phone) || ukMobile(pc?.phone);
+    const wantEmail = emailOn && (how === "email" || how === "both") && to.length > 0;
+    const wantSms = smsOn && (how === "sms" || how === "both") && !!mob;
+    if (!wantEmail && !wantSms) { skipped++; await done(); continue; }
     list.sort((x, y) => (x.start_time || "99").localeCompare(y.start_time || "99"));
     const line = (v: any) => { const j = v.jobs || {}; return `• ${SVC[j.service] || j.title || "Your visit"}${j.line ? ` at ${j.line}` : ""}, ${timeText(v.start_time)}`; };
     const first = list[0], j0 = first.jobs || {};
-    const vars = { ...B, first_name: firstName(a.name, a.kind, pc?.name), customer_name: a.name, date: longDate(tomorrow), time: timeText(first.start_time),
-      service: SVC[j0.service] || j0.title || "your visit", address: [j0.line, j0.postcode].filter(Boolean).join(", "), visit_list: list.map(line).join("\n") };
-    const subject = fill(t.subject || "Reminder: your visit tomorrow", vars), body = fill(t.body, vars);
-    try {
-      const s = await send(db, to, subject, body);
-      await db.from("visits").update({ reminder_sent_at: new Date().toISOString() }).in("id", list.map(v => v.id));
-      await db.from("account_comms").insert({ account_id: accId, kind: "email", direction: "out", subject, body: body.slice(0, 6000), from_addr: s.from, to_addr: to.join(", "),
-        message_id: s.id, thread_id: s.threadId, created_by_name: "Auto reminder", meta: { via: "gmail", reminder: "visit", date: tomorrow } });
-      sent++;
-    } catch (e) { console.error("visit reminder", accId, (e as Error).message); }
+    const svcs = [...new Set(list.map(v => (SVC[(v.jobs || {}).service] || (v.jobs || {}).title || "your visit")))];
+    const vars = { ...B, first_name: firstName(a!.name, a!.kind, pc?.name), customer_name: a!.name, date: longDate(tomorrow), time: timeText(first.start_time),
+      service: svcs.length > 1 ? svcs.slice(0, -1).join(", ") + " and " + svcs[svcs.length - 1] : svcs[0], address: j0.line || j0.postcode || "",
+      visit_list: list.map(line).join("\n") };
+    let ok = 0;   // retried on the next run (until 9pm) if nothing went
+    if (wantEmail) {
+      const subject = fill(t!.subject || "Reminder: your visit tomorrow", vars), body = fill(t!.body, vars);
+      try {
+        const s = await send(db, to, subject, body);
+        await db.from("account_comms").insert({ account_id: accId, kind: "email", direction: "out", subject, body: body.slice(0, 6000), from_addr: s.from, to_addr: to.join(", "),
+          message_id: s.id, thread_id: s.threadId, created_by_name: "Auto reminder", meta: { via: "gmail", reminder: "visit", date: tomorrow } });
+        emails++; ok++;
+      } catch (e) { console.error("visit reminder email", accId, (e as Error).message); }
+    }
+    if (wantSms) {
+      const text = fill(ts!.body, vars);
+      try {
+        const r = await sendSms(mob, text, biz.sms_sender || biz.trading_name);
+        await db.from("account_comms").insert({ account_id: accId, kind: "sms", direction: "out", subject: "Appointment reminder (text)", body: text, to_addr: "+" + mob,
+          created_by_name: "Auto reminder", meta: { via: r.provider, id: r.id, reminder: "visit", date: tomorrow } });
+        texts++; ok++;
+      } catch (e) { console.error("visit reminder text", accId, (e as Error).message); }
+    }
+    if (ok) await done();
   }
-  return { sent, skipped };
+  return { emails, texts, skipped };
 }
 
 /* ---------- example details for a test send ---------- */
@@ -69,6 +91,7 @@ const SAMPLE: Record<string, string> = {
   visit_list: "• Window cleaning at 12 Example Road, around 10:30\n• Gutter clean at 12 Example Road, around 11:00",
   invoice_no: "INV-1000", amount_due: "£45.00", total: "£45.00", work_date: "24 November 2026", due_date: "8 December 2026",
   how_to_pay: "You can pay by card using the button below, or by bank transfer using the details below.",
+  pay_link: "https://portal.example.com/i?t=…",
 };
 
 Deno.serve(async (req) => {
@@ -85,13 +108,20 @@ Deno.serve(async (req) => {
     }
     const me = await who(db, req);
     if (!me) return reply({ error: "Please sign in again." }, 401);
+    if (action === "status") return reply({ sms: { configured: smsConfigured(), provider: smsProvider() || null } });
     if (action === "test") {
       if (!me.admin) return reply({ error: "Only the admin can do this." }, 403);
       const t = await getTemplate(db, String(body.key || ""));
       if (!t) return reply({ error: "Unknown message" }, 400);
+      const biz = await getBusiness(db), vars = { ...businessVars(biz), ...SAMPLE };
+      if ((t as any).channel === "sms" || String(t.key).endsWith("_sms")) {
+        const mob = ukMobile(String(body.phone || ""));
+        if (!mob) return reply({ error: "Enter a UK mobile number to send the test text to." }, 400);
+        await sendSms(mob, fill(body.body ?? t.body, vars), biz.sms_sender || biz.trading_name);
+        return reply({ sent: true, to: "+" + mob });
+      }
       const to = cleanEmails(me.email);
       if (!to.length) return reply({ error: "Your login has no email address to send the test to." }, 400);
-      const vars = { ...businessVars(await getBusiness(db)), ...SAMPLE };
       const subject = "[Test] " + fill(body.subject ?? t.subject ?? "", vars), text = fill(body.body ?? t.body, vars);
       await send(db, to, subject, text);
       return reply({ sent: true, to: to[0] });

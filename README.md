@@ -32,6 +32,8 @@ change prices.
 | `supabase/messages.sql` | Business details, message templates, appointment reminders (sent by the reminders function every 10 minutes). Run after reminders.sql. |
 | `supabase/functions/reminders` | Sends tomorrow's appointment reminders after the set time, and test messages from Admin → Reminders |
 | `docs/white-label.md` | How to build so the Portal can be set up for any trade business, and what's still hard-coded |
+| `supabase/sms.sql` | Text message reminders: each account's "Reminders by" (email, text, both, none), the text sender name and the text templates. Run after messages.sql. |
+| `supabase/functions/_shared/sms.ts` | Sends texts through The SMS Works (SMS_PROVIDER=smsworks, SMS_API_KEY) or Twilio (SMS_PROVIDER=twilio, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) |
 | `supabase/reminders.sql` | Payment reminders: days after the work to chase unpaid invoices (default 3 and 7), and per-invoice reminder status. Run after invoices.sql. |
 | `supabase/functions/invoicing` | Emails invoices and payment reminders, Stripe card payments (Checkout + webhook), copies invoices and payments to Sage Accounting and reads back payments matched there |
 | `mail.js` | Emailing quotes and messages, the notification bell, Admin → Email (Gmail connection) |
