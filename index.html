@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Purgō Portal">
 <link rel="preload" href="fonts/plus-jakarta-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="purgo.css?v=b712eb094b">
+<link rel="stylesheet" href="purgo.css?v=de789939d1">
 </head>
 <body>
 <header class="topbar">
@@ -386,9 +386,19 @@
 
 <!-- ADMIN -->
 <main id="view-admin" class="wrap" hidden>
-  <div class="viewbar"><div><h2 class="vtitle">Admin</h2><p class="sub">Only you can see and change this page. Staff quote from these prices but never see costs, labour pay, markups or fuel. Changes save automatically a moment after you stop typing.</p></div>
-    <div class="vb-actions"><span class="hint" id="rateMsg" hidden></span><button class="btn pri" type="button" id="saveRates" disabled>Save now</button></div></div>
-  <div class="admin-grid">
+  <div class="viewbar"><div><button class="linkbtn" type="button" id="admBack" hidden>← Admin</button><h2 class="vtitle" id="admTitle">Admin</h2><p class="sub" id="admSub">Only you can see and change these settings.</p></div>
+    <div class="vb-actions" id="admRateBar" hidden><span class="hint" id="rateMsg" hidden></span><button class="btn pri" type="button" id="saveRates" disabled>Save now</button></div></div>
+  <nav class="adm-menu" id="admHome" aria-label="Admin settings">
+    <button type="button" data-sec="business"><span class="at"><b>Your business</b><small>Name, contact details and the name texts come from</small></span><span class="ch">›</span></button>
+    <button type="button" data-sec="pricing"><span class="at"><b>Prices and costs</b><small>Rates, labour, fuel and chemicals used in quotes</small></span><span class="ch">›</span></button>
+    <button type="button" data-sec="email"><span class="at"><b>Email</b><small>The mailbox the Portal sends and reads customer email from</small></span><span class="ch">›</span></button>
+    <button type="button" data-sec="invoicing"><span class="at"><b>Invoicing and payments</b><small>Payment terms, bank details, VAT, card payments and Sage</small></span><span class="ch">›</span></button>
+    <button type="button" data-sec="reminders"><span class="at"><b>Reminders</b><small>Automatic appointment and payment reminders, by email and text</small></span><span class="ch">›</span></button>
+    <button type="button" data-sec="staff"><span class="at"><b>Staff</b><small>Who can log in, and switching people off</small></span><span class="ch">›</span></button>
+  </nav>
+  <div class="admin-grid adm-sec" data-sec="business" hidden><section class="card" id="bizCard"></section></div>
+  <div class="admin-grid adm-sec" data-sec="pricing" hidden>
+    <p class="hint">Staff quote from these prices but never see costs, labour pay, markups or fuel. Changes save automatically a moment after you stop typing.</p>
     <section class="card">
       <h2>Fuel</h2>
       <div class="svc-body">
@@ -412,9 +422,11 @@
         <div class="fields" style="margin-top:14px"><label class="f">Default apply m²/hr<input type="number" step="any" min="1" id="r_chemApp" data-rk="chemApp"></label></div>
       </div>
     </section>
-  <section class="card" id="mailCard"></section>
-  <section class="card" id="invCard"></section>
-  <section class="card" id="remCard"></section>
+  </div>
+  <div class="admin-grid adm-sec" data-sec="email" hidden><section class="card" id="mailCard"></section></div>
+  <div class="admin-grid adm-sec" data-sec="invoicing" hidden><section class="card" id="invCard"></section></div>
+  <div class="admin-grid adm-sec" data-sec="reminders" hidden><section class="card" id="remCard"></section></div>
+  <div class="admin-grid adm-sec" data-sec="staff" hidden>
   <section class="card">
     <h2>Staff</h2>
     <p class="hint">To add someone: in Supabase open <b>Authentication → Users → Add user → Create new user</b>, enter their email and a temporary password, and tick <b>Auto Confirm User</b>. They appear here as staff. Switch someone off when they leave; their quotes stay.</p>
@@ -426,14 +438,14 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="config.js"></script>
 <script src="vendor/supabase-2.117.3.js"></script>
-<script src="purgo.js?v=85ad9ebed6"></script>
+<script src="purgo.js?v=06fcfc52f5"></script>
 <script src="measure.js?v=f88bc2a42d"></script>
 <script src="portfolio.js?v=704c4911e9"></script>
-<script src="mail.js?v=d8be2b4470"></script>
+<script src="mail.js?v=d92cda6caf"></script>
 <script src="accounts.js?v=e22525f38e"></script>
 <script src="jobs.js?v=4240977ba5"></script>
-<script src="invoices.js?v=edef6c3c79"></script>
-<script src="reminders.js?v=44998f65eb"></script>
+<script src="invoices.js?v=d29fb10d35"></script>
+<script src="reminders.js?v=9c63bead13"></script>
 <script src="portal.js?v=4afff4439d"></script>
 </body>
 </html>

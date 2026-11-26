@@ -649,3 +649,16 @@ small.fu-next.ok{color:var(--good)!important;font-weight:600}
 .rm-vars{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .rm-vars .btn.sm{font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:3px 8px}
 .rm-prev-box{margin-top:6px;padding:12px 14px;border:1px dashed var(--line, #d4e4ee);border-radius:10px;font-size:14px;line-height:1.5;background:rgba(238,245,249,.5)}
+
+/* Admin: settings menu, one section at a time */
+.adm-menu{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.adm-menu button{display:flex;align-items:center;gap:12px;width:100%;padding:15px 18px;background:none;border:0;border-top:1px solid var(--line);text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+.adm-menu button:first-child{border-top:0}
+.adm-menu button:hover,.adm-menu button:focus-visible{background:var(--soft)}
+.adm-menu .at{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.adm-menu .at b{font-weight:700}
+.adm-menu .at small{color:var(--muted);font-size:13px}
+.adm-menu .ch{color:var(--muted);font-size:22px;line-height:1}
+#admBack{margin-bottom:4px}
+/* the section title is already at the top, so a card's own heading would repeat it */
+#bizCard>h2:first-child,#mailCard>h2:first-child,#invCard>h2:first-child,#remCard>h2:first-child,.adm-sec[data-sec="staff"]>.card>h2:first-child{display:none}

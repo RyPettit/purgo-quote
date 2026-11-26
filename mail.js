@@ -229,7 +229,7 @@ const MAIL = (()=>{
     status(true);
     const q = new URLSearchParams(location.search).get('mail');
     if(q){ const msg = {connected:'Mailbox connected. Customer emails will start appearing on their accounts.', cancelled:'Connecting the mailbox was cancelled.', expired:'That took too long. Press Connect again.', failed:'Google didn\'t return access. Press Connect again and approve everything it asks.'}[q];
-      if(msg) setTimeout(()=>flash(msg), 600); history.replaceState(null, '', location.pathname + location.hash); }
+      if(msg) setTimeout(()=>flash(msg), 600); history.replaceState(null, '', location.pathname + location.hash); if(/^#admin/.test(location.hash)) location.hash = '#admin/email'; }
   }
   const onVis = ()=>{ if(document.visibilityState==='visible') loadNotes(); };
   function stop(){
