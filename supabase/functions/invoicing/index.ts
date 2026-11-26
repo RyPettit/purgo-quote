@@ -112,8 +112,16 @@ async function pushInvoice(db: Db, tok: string, conn: Conn, inv: any) {
   }
   const { data: lines } = await db.from("invoice_lines").select("*").eq("invoice_id", inv.id).order("sort");
   const contact = await sageContact(db, tok, conn, inv.account_id);
+  // Sage needs an invoice address: the one on the invoice, else the account's, split into street and postcode
+  const { data: acc } = await db.from("accounts").select("billing_line,billing_postcode").eq("id", inv.account_id).maybeSingle();
+  let line1 = "", pc = "";
+  const parts = String(inv.bill_address || "").split(",").map((x: string) => x.trim()).filter(Boolean);
+  if (parts.length && /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(parts[parts.length - 1])) pc = parts.pop()!;
+  line1 = parts.join(", ") || acc?.billing_line || "";
+  pc = pc || acc?.billing_postcode || "";
   const body = { sales_invoice: {
     contact_id: contact, date: inv.issue_date, due_date: inv.due_date, reference: invLabel(inv.invoice_no),
+    main_address: { address_line_1: (line1 || inv.bill_name || "Address not given").slice(0, 100), postal_code: pc || undefined, country_id: "GB" },
     notes: inv.notes || undefined,
     invoice_lines: (lines || []).map((l: any) => {
       const net = r2(l.amount - l.vat);
